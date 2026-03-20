@@ -107,7 +107,18 @@ import { RealtimeStateService } from './realtime-state.service';
             {{ isSubmittingApiKey ? 'Validating...' : 'Enter' }}
           </button>
         </form>
+        <button type="button" class="secondary-action" (click)="onCreateApiKeyClicked()">
+          Create API Key
+        </button>
         <p class="access-error" *ngIf="accessError">{{ accessError }}</p>
+        <section class="boot-status" *ngIf="keyActionMessage">
+          <p>{{ keyActionMessage }}</p>
+        </section>
+        <section class="key-output" *ngIf="createdApiKey">
+          <p><strong>New Key (share only with that friend):</strong> {{ createdApiKey }}</p>
+          <button type="button" (click)="copyCreatedApiKey()">Copy Key</button>
+          <button type="button" (click)="dismissCreatedApiKey()">Dismiss</button>
+        </section>
       </section>
     </ng-template>
   `,
@@ -233,6 +244,10 @@ import { RealtimeStateService } from './realtime-state.service';
     .mission-layout {
       width: 100%;
       max-width: 100%;
+    }
+
+    .secondary-action {
+      justify-self: start;
     }
 
     .key-output {
