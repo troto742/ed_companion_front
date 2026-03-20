@@ -1,3 +1,4 @@
+import { FormsModule } from '@angular/forms';
 import { NgIf } from '@angular/common';
 import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { AppHeaderComponent, AppSection } from './components/app-header.component';
@@ -14,6 +15,7 @@ import { RealtimeStateService } from './realtime-state.service';
   standalone: true,
   imports: [
     NgIf,
+    FormsModule,
     AppHeaderComponent,
     ShipStatusPanelComponent,
     LocationPanelComponent,
@@ -26,59 +28,86 @@ import { RealtimeStateService } from './realtime-state.service';
     '[class.dark-mode]': 'isDarkMode',
   },
   template: `
-    <app-header
-      appName="Elite Companion"
-      [activeSection]="activeSection"
-      (sectionChange)="onSectionChange($event)"
-      (createApiKeyRequest)="onCreateApiKeyClicked()"
-    ></app-header>
+    <ng-container *ngIf="hasStoredApiKey; else apiKeyGate">
+      <app-header
+        appName="Elite Companion"
+        [activeSection]="activeSection"
+        (sectionChange)="onSectionChange($event)"
+        (createApiKeyRequest)="onCreateApiKeyClicked()"
+        (logoutRequest)="onChangeApiKeyClicked()"
+      ></app-header>
 
-    <section class="key-output" *ngIf="createdApiKey">
-      <p><strong>New Key (share only with that friend):</strong> {{ createdApiKey }}</p>
-      <button type="button" (click)="copyCreatedApiKey()">Copy Key</button>
-      <button type="button" (click)="dismissCreatedApiKey()">Dismiss</button>
-    </section>
+      <section class="key-output" *ngIf="createdApiKey">
+        <p><strong>New Key (share only with that friend):</strong> {{ createdApiKey }}</p>
+        <button type="button" (click)="copyCreatedApiKey()">Copy Key</button>
+        <button type="button" (click)="dismissCreatedApiKey()">Dismiss</button>
+      </section>
 
-    <section class="boot-status" *ngIf="keyActionMessage">
-      <p>{{ keyActionMessage }}</p>
-    </section>
+      <section class="boot-status" *ngIf="keyActionMessage">
+        <p>{{ keyActionMessage }}</p>
+      </section>
 
-    <main *ngIf="state.snapshot() as snapshot; else loadingState">
-      <section class="hud" *ngIf="activeSection === 'route-planner'">
-        <section class="left-column">
-          <app-ship-status-panel
-            [snapshot]="snapshot"
-            [isDarkMode]="isDarkMode"
-            (themeToggle)="toggleTheme()"
-          />
+      <main *ngIf="state.snapshot() as snapshot; else loadingState">
+        <section class="hud" *ngIf="activeSection === 'route-planner'">
+          <section class="left-column">
+            <app-ship-status-panel
+              [snapshot]="snapshot"
+              [isDarkMode]="isDarkMode"
+              (themeToggle)="toggleTheme()"
+            />
+          </section>
+
+          <section class="right-column">
+            <app-location-panel
+              [snapshot]="snapshot"
+              [isConnected]="state.isConnected()"
+              [lastError]="state.lastError()"
+            />
+            <app-galaxy-route-panel [snapshot]="snapshot" />
+          </section>
         </section>
 
-        <section class="right-column">
-          <app-location-panel
-            [snapshot]="snapshot"
-            [isConnected]="state.isConnected()"
-            [lastError]="state.lastError()"
-          />
-          <app-galaxy-route-panel [snapshot]="snapshot" />
+        <section class="mission-layout" *ngIf="activeSection === 'mission-board'">
+          <app-mission-board-panel [snapshot]="snapshot" />
         </section>
-      </section>
 
-      <section class="mission-layout" *ngIf="activeSection === 'mission-board'">
-        <app-mission-board-panel [snapshot]="snapshot" />
-      </section>
+        <section class="mission-layout" *ngIf="activeSection === 'colonization'">
+          <app-colonization-panel [snapshot]="snapshot" />
+        </section>
 
-      <section class="mission-layout" *ngIf="activeSection === 'colonization'">
-        <app-colonization-panel [snapshot]="snapshot" />
-      </section>
+        <section class="mission-layout" *ngIf="activeSection === 'trade-recommendations'">
+          <app-trade-recommendations-panel [snapshot]="snapshot" />
+        </section>
+      </main>
 
-      <section class="mission-layout" *ngIf="activeSection === 'trade-recommendations'">
-        <app-trade-recommendations-panel [snapshot]="snapshot" />
-      </section>
-    </main>
+      <ng-template #loadingState>
+        <section class="boot-status">
+          <p>{{ state.lastError() || 'Waiting for backend state...' }}</p>
+        </section>
+      </ng-template>
+    </ng-container>
 
-    <ng-template #loadingState>
-      <section class="boot-status">
-        <p>{{ state.lastError() || 'Waiting for backend state...' }}</p>
+    <ng-template #apiKeyGate>
+      <section class="access-card">
+        <h1>Elite Companion</h1>
+        <p class="access-copy">Enter your API key to load your commander state.</p>
+        <form class="access-form" (ngSubmit)="submitApiKey()">
+          <label for="apiKey">API Key</label>
+          <input
+            id="apiKey"
+            name="apiKey"
+            type="password"
+            [(ngModel)]="apiKeyInput"
+            [disabled]="isSubmittingApiKey"
+            autocomplete="off"
+            spellcheck="false"
+            required
+          />
+          <button type="submit" [disabled]="isSubmittingApiKey || !apiKeyInput.trim()">
+            {{ isSubmittingApiKey ? 'Validating...' : 'Enter' }}
+          </button>
+        </form>
+        <p class="access-error" *ngIf="accessError">{{ accessError }}</p>
       </section>
     </ng-template>
   `,
@@ -153,6 +182,54 @@ import { RealtimeStateService } from './realtime-state.service';
       font-size: 1.15rem;
     }
 
+    .access-card {
+      width: min(100%, 520px);
+      margin: 12vh auto 0;
+      border: 5px solid var(--panel-border);
+      background: var(--panel-bg);
+      padding: 22px 20px;
+      display: grid;
+      gap: 14px;
+      box-sizing: border-box;
+    }
+
+    .access-card h1 {
+      margin: 0;
+      font-size: 2rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .access-copy,
+    .access-error {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    .access-error {
+      color: var(--error-color);
+      font-weight: 700;
+    }
+
+    .access-form {
+      display: grid;
+      gap: 10px;
+    }
+
+    .access-form label {
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .access-form input {
+      border: 3px solid var(--panel-border);
+      background: var(--table-bg);
+      color: var(--app-text);
+      padding: 10px 12px;
+      font: inherit;
+    }
+
     .mission-layout {
       width: 100%;
       max-width: 100%;
@@ -202,12 +279,19 @@ export class App implements OnInit, OnDestroy {
   isDarkMode = false;
   createdApiKey: string | null = null;
   keyActionMessage: string | null = null;
+  hasStoredApiKey = false;
+  apiKeyInput = '';
+  accessError: string | null = null;
+  isSubmittingApiKey = false;
   private creatingApiKey = false;
   private static readonly THEME_STORAGE_KEY = 'elite-companion-theme';
 
   ngOnInit(): void {
     this.loadTheme();
-    this.state.start();
+    this.hasStoredApiKey = this.state.hasApiKey();
+    if (this.hasStoredApiKey) {
+      this.state.start();
+    }
   }
 
   ngOnDestroy(): void {
@@ -257,6 +341,39 @@ export class App implements OnInit, OnDestroy {
       error: () => {
         this.keyActionMessage = 'Could not create API key. Check admin key/backend.';
         this.creatingApiKey = false;
+      },
+    });
+  }
+
+  onChangeApiKeyClicked(): void {
+    this.state.clearApiKey();
+    this.hasStoredApiKey = false;
+    this.apiKeyInput = '';
+    this.accessError = null;
+    this.keyActionMessage = null;
+    this.createdApiKey = null;
+  }
+
+  submitApiKey(): void {
+    const normalizedApiKey = this.apiKeyInput.trim();
+    if (!normalizedApiKey || this.isSubmittingApiKey) {
+      return;
+    }
+
+    this.isSubmittingApiKey = true;
+    this.accessError = null;
+    this.state.validateApiKey(normalizedApiKey).subscribe({
+      next: () => {
+        this.state.setApiKey(normalizedApiKey);
+        this.hasStoredApiKey = true;
+        this.apiKeyInput = '';
+        this.state.start();
+        this.isSubmittingApiKey = false;
+      },
+      error: () => {
+        this.state.clearApiKey();
+        this.accessError = 'Invalid API key or backend unavailable.';
+        this.isSubmittingApiKey = false;
       },
     });
   }

@@ -44,7 +44,10 @@ export type AppSection = 'route-planner' | 'mission-board' | 'colonization' | 't
           </button>
         </nav>
       </div>
-      <button type="button" class="header-btn" (click)="createApiKeyRequest.emit()">Create API Key</button>
+      <div class="header-actions">
+        <button type="button" class="header-btn" (click)="createApiKeyRequest.emit()">Create API Key</button>
+        <button type="button" class="header-btn" (click)="logoutRequest.emit()">Change API Key</button>
+      </div>
     </header>
   `,
   styles: `
@@ -86,6 +89,13 @@ export type AppSection = 'route-planner' | 'mission-board' | 'colonization' | 't
       white-space: nowrap;
     }
 
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
     .nav-tabs {
       display: flex;
       gap: 8px;
@@ -113,5 +123,6 @@ export class AppHeaderComponent {
   @Input() appName = 'Elite Companion';
   @Input() activeSection: AppSection = 'route-planner';
   @Output() createApiKeyRequest = new EventEmitter<void>();
+  @Output() logoutRequest = new EventEmitter<void>();
   @Output() sectionChange = new EventEmitter<AppSection>();
 }

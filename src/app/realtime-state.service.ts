@@ -5,7 +5,6 @@ import { io, Socket } from 'socket.io-client';
 import { StateSnapshot } from './state.types';
 
 const DEFAULT_BACKEND_URL = '';
-const DEFAULT_BACKEND_API_KEY = 'dev-api-key';
 const BACKEND_URL_STORAGE_KEY = 'elite-backend-url';
 const BACKEND_API_KEY_STORAGE_KEY = 'elite-api-key';
 const BACKEND_ADMIN_KEY_STORAGE_KEY = 'elite-admin-key';
@@ -108,7 +107,20 @@ export class RealtimeStateService {
 
   constructor(private readonly http: HttpClient) {}
 
+  validateApiKey(apiKey: string): Observable<StateSnapshot> {
+    return this.http.get<StateSnapshot>(`${this.getBackendUrl()}/api/state`, {
+      headers: { 'x-api-key': apiKey.trim() },
+    });
+  }
+
   start(): void {
+    if (!this.hasApiKey()) {
+      this.lastError.set(null);
+      this.snapshot.set(null);
+      this.isConnected.set(false);
+      return;
+    }
+
     this.loadInitialState();
     if (!this.socket) {
       this.connectSocket();
@@ -123,22 +135,42 @@ export class RealtimeStateService {
     this.isConnected.set(false);
   }
 
+  hasApiKey(): boolean {
+    return this.readStorage(BACKEND_API_KEY_STORAGE_KEY).length > 0;
+  }
+
+  setApiKey(apiKey: string): void {
+    const normalized = apiKey.trim();
+    if (!normalized) {
+      return;
+    }
+
+    this.writeStorage(BACKEND_API_KEY_STORAGE_KEY, normalized);
+  }
+
+  clearApiKey(): void {
+    this.stop();
+    this.snapshot.set(null);
+    this.lastError.set(null);
+
+    try {
+      localStorage.removeItem(BACKEND_API_KEY_STORAGE_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  }
+
   private loadInitialState(): void {
-    const backendUrl = this.getBackendUrl();
     const apiKey = this.getApiKey();
 
-    this.http
-      .get<StateSnapshot>(`${backendUrl}/api/state`, {
-        headers: { 'x-api-key': apiKey },
-      })
-      .subscribe({
-        next: (state) => {
-          this.snapshot.set(this.normalizeSnapshot(state));
-        },
-        error: () => {
-          this.lastError.set('No se pudo cargar el estado inicial del backend (revisa API key).');
-        },
-      });
+    this.validateApiKey(apiKey).subscribe({
+      next: (state) => {
+        this.snapshot.set(this.normalizeSnapshot(state));
+      },
+      error: () => {
+        this.lastError.set('No se pudo cargar el estado inicial del backend (revisa API key).');
+      },
+    });
   }
 
   private connectSocket(): void {
@@ -380,13 +412,7 @@ export class RealtimeStateService {
   }
 
   private getApiKey(): string {
-    const queryValue = this.readQueryParam('apiKey');
-    if (queryValue) {
-      this.writeStorage(BACKEND_API_KEY_STORAGE_KEY, queryValue);
-      return queryValue;
-    }
-
-    return this.readStorage(BACKEND_API_KEY_STORAGE_KEY) || DEFAULT_BACKEND_API_KEY;
+    return this.readStorage(BACKEND_API_KEY_STORAGE_KEY);
   }
 
   private readQueryParam(key: string): string {
