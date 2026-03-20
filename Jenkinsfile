@@ -14,7 +14,12 @@ pipeline {
   stages {
     stage('Build Docker Image') {
       steps {
-        sh "docker build -t ${FULL_IMAGE} -f frontend/Dockerfile frontend"
+        script {
+          def dockerContext = fileExists('Dockerfile') ? '.' : 'frontend'
+          def dockerfilePath = fileExists('Dockerfile') ? 'Dockerfile' : 'frontend/Dockerfile'
+
+          sh "docker build -t ${FULL_IMAGE} -f ${dockerfilePath} ${dockerContext}"
+        }
       }
     }
 
