@@ -301,6 +301,26 @@ export class RealtimeStateService {
     });
   }
 
+  generateSpanshExactRoute(request: {
+    sourceSystem: string;
+    destinationSystem: string;
+    shipBuild: string;
+    cargo?: number;
+    fuelReserveSize?: number;
+    useSupercharge?: boolean;
+    useInjections?: boolean;
+    excludeSecondary?: boolean;
+    refuelEveryScoopable?: boolean;
+    isSupercharged?: boolean;
+    algorithm?: 'optimistic' | 'guided' | 'fuel' | 'fuel_jumps' | 'pessimistic';
+  }): Observable<SpanshRouteResponse> {
+    return this.http.post<SpanshRouteResponse>(`${this.getBackendUrl()}/api/route/spansh/exact`, request, {
+      headers: {
+        'x-api-key': this.getApiKey(),
+      },
+    });
+  }
+
   createApiKey(label: string, adminKey: string, apiKey?: string): Observable<AdminCreateKeyResponse> {
     const body: { label: string; apiKey?: string } = { label: label.trim() };
     const customApiKey = apiKey?.trim();

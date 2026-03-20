@@ -107,13 +107,8 @@ const MAX_SAVED_ROUTES = 15;
       </section>
 
       <section class="exact-plotter-assist">
-        <div class="exact-header">
-          <h3>Exact Plotter Assist</h3>
-          <p class="meta">
-            Paste an EDSY/Inara ship build. Elite Companion will remember it, copy it for you, and open
-            Spansh Exact Plotter in a new tab.
-          </p>
-        </div>
+        <h3>Exact Plotter Assist</h3>
+        <p class="helper-copy">Paste a SLEF/Coriolis ship build to generate an exact route here.</p>
         <div class="generator-grid">
           <label>
             <span>Source</span>
@@ -135,20 +130,46 @@ const MAX_SAVED_ROUTES = 15;
               placeholder="Colonia"
             />
           </label>
+          <label>
+            <span>Cargo</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              [(ngModel)]="exactCargo"
+              [ngModelOptions]="{ standalone: true }"
+              [disabled]="uploadingRoute"
+            />
+          </label>
+          <label>
+            <span>Reserve Fuel</span>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              [(ngModel)]="exactFuelReserveSize"
+              [ngModelOptions]="{ standalone: true }"
+              [disabled]="uploadingRoute"
+            />
+          </label>
         </div>
         <label class="build-label">
           <span>Ship Build</span>
           <textarea
-            rows="7"
+            rows="6"
             [(ngModel)]="exactShipBuild"
             [ngModelOptions]="{ standalone: true }"
             [disabled]="uploadingRoute"
-            placeholder="Paste the EDSY or Inara ship build export here"
+            placeholder="Paste the SLEF or Coriolis ship export here"
           ></textarea>
         </label>
         <div class="exact-actions">
-          <button type="button" (click)="saveExactPlotterDraft(snapshot)">Save Build</button>
-          <button type="button" (click)="openSpanshExactPlotter(snapshot)">Open Spansh Exact Plotter</button>
+          <button type="button" (click)="saveExactPlotterDraft(snapshot)" [disabled]="uploadingRoute">
+            Save Build
+          </button>
+          <button type="button" (click)="generateExactRoute(snapshot)" [disabled]="uploadingRoute">
+            {{ uploadingRoute ? 'Generating...' : 'Generate Exact Route' }}
+          </button>
         </div>
       </section>
 
@@ -380,7 +401,7 @@ const MAX_SAVED_ROUTES = 15;
 
     .powered-by {
       margin: 0;
-      font-size: 0.95rem;
+      font-size: 0.78rem;
       opacity: 0.85;
     }
 
@@ -398,16 +419,24 @@ const MAX_SAVED_ROUTES = 15;
       gap: 10px;
     }
 
-    .exact-header h3 {
-      margin: 0 0 6px;
-      font-size: 1.35rem;
-      letter-spacing: 0.4px;
+    .exact-plotter-assist h3 {
+      margin: 0;
+      font-size: 1.05rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .helper-copy {
+      margin: 0;
+      font-size: 0.8rem;
+      line-height: 1.25;
+      opacity: 0.8;
     }
 
     .build-label {
       display: grid;
       gap: 6px;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       font-weight: 700;
     }
 
@@ -513,6 +542,8 @@ export class GalaxyRoutePanelComponent implements OnInit {
   exactSource = '';
   exactDestination = '';
   exactShipBuild = '';
+  exactCargo = 0;
+  exactFuelReserveSize = 0;
 
   private readonly state = inject(RealtimeStateService);
 
@@ -593,29 +624,48 @@ export class GalaxyRoutePanelComponent implements OnInit {
     this.routeUploadError = null;
   }
 
-  openSpanshExactPlotter(snapshot: StateSnapshot): void {
-    const draft = this.buildExactPlotterDraft(snapshot);
-    if (!draft.source || !draft.destination) {
-      this.routeUploadError = 'Source and destination systems are required for Exact Plotter.';
+  generateExactRoute(snapshot: StateSnapshot): void {
+    const sourceSystem = this.exactSource.trim() || snapshot.location.starSystem?.trim() || '';
+    const destinationSystem = this.exactDestination.trim();
+    const shipBuild = this.exactShipBuild.trim();
+
+    if (!sourceSystem || !destinationSystem) {
+      this.routeUploadError = 'Source and destination systems are required to generate an exact route.';
       return;
     }
 
-    if (!draft.shipBuild) {
-      this.routeUploadError = 'Ship build is required for Exact Plotter.';
+    if (!shipBuild) {
+      this.routeUploadError = 'Ship build is required to generate an exact route.';
       return;
     }
 
+    this.uploadingRoute = true;
+    this.routeUploadError = null;
+    this.copyMessage = null;
     this.persistExactPlotterDraft(snapshot);
-    void this.copyToClipboard(draft.shipBuild)
-      .then(() => {
-        this.copyMessage = 'Ship build copied. Paste it into Spansh Exact Plotter.';
-      })
-      .catch(() => {
-        this.copyMessage = 'Opened Spansh Exact Plotter. Copy the ship build manually if needed.';
-      })
-      .finally(() => {
-        window.open('https://spansh.co.uk/exact-plotter', '_blank', 'noopener');
-      });
+
+    this.state.generateSpanshExactRoute({
+      sourceSystem,
+      destinationSystem,
+      shipBuild,
+      cargo: this.exactCargo,
+      fuelReserveSize: this.exactFuelReserveSize,
+    }).subscribe({
+      next: (result) => {
+        this.routeUploadError = null;
+        this.uploadingRoute = false;
+        this.exactSource = sourceSystem;
+        this.applySpanshPreview(result.previewRows);
+        const generatedFile = this.buildSpanshCsvFile(result.routeName, result.previewRows);
+        void this.saveRouteToStorage(generatedFile, result.routeName);
+      },
+      error: (error: unknown) => {
+        const apiError = (error as { error?: { error?: unknown } })?.error?.error;
+        this.routeUploadError =
+          typeof apiError === 'string' ? apiError : 'No se pudo generar la ruta exacta con Spansh.';
+        this.uploadingRoute = false;
+      },
+    });
   }
 
   onSavedRouteSelected(event: Event): void {
@@ -983,39 +1033,48 @@ export class GalaxyRoutePanelComponent implements OnInit {
         return;
       }
 
-      const parsed = JSON.parse(raw) as { source?: string; destination?: string; shipBuild?: string };
+      const parsed = JSON.parse(raw) as {
+        source?: string;
+        destination?: string;
+        shipBuild?: string;
+        cargo?: number;
+        fuelReserveSize?: number;
+      };
+
       this.exactSource = typeof parsed.source === 'string' ? parsed.source : '';
       this.exactDestination = typeof parsed.destination === 'string' ? parsed.destination : '';
       this.exactShipBuild = typeof parsed.shipBuild === 'string' ? parsed.shipBuild : '';
+      this.exactCargo = typeof parsed.cargo === 'number' ? parsed.cargo : 0;
+      this.exactFuelReserveSize = typeof parsed.fuelReserveSize === 'number' ? parsed.fuelReserveSize : 0;
     } catch {
       this.exactSource = '';
       this.exactDestination = '';
       this.exactShipBuild = '';
+      this.exactCargo = 0;
+      this.exactFuelReserveSize = 0;
     }
   }
 
   private persistExactPlotterDraft(snapshot: StateSnapshot): void {
-    const draft = this.buildExactPlotterDraft(snapshot);
-    this.exactSource = draft.source;
-    this.exactDestination = draft.destination;
+    const source = this.exactSource.trim() || snapshot.location.starSystem?.trim() || '';
+    const destination = this.exactDestination.trim();
+    const shipBuild = this.exactShipBuild.trim();
+
+    this.exactSource = source;
+    this.exactDestination = destination;
+    this.exactShipBuild = shipBuild;
 
     try {
-      localStorage.setItem(EXACT_PLOTTER_STORAGE_KEY, JSON.stringify(draft));
+      localStorage.setItem(EXACT_PLOTTER_STORAGE_KEY, JSON.stringify({
+        source,
+        destination,
+        shipBuild,
+        cargo: this.exactCargo,
+        fuelReserveSize: this.exactFuelReserveSize,
+      }));
     } catch {
       // ignore storage errors
     }
-  }
-
-  private buildExactPlotterDraft(snapshot: StateSnapshot): {
-    source: string;
-    destination: string;
-    shipBuild: string;
-  } {
-    return {
-      source: this.exactSource.trim() || snapshot.location.starSystem?.trim() || '',
-      destination: this.exactDestination.trim(),
-      shipBuild: this.exactShipBuild.trim(),
-    };
   }
 
   private async copyToClipboard(value: string): Promise<void> {
