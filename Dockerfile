@@ -1,0 +1,17 @@
+FROM node:22-bookworm-slim AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+
+COPY angular.json ./
+COPY tsconfig.json ./
+COPY tsconfig.app.json ./
+COPY src ./src
+COPY public ./public
+RUN npm run build -- --configuration production
+
+FROM nginx:1.27-alpine AS runner
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist/elite-client/browser /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
