@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import { io, Socket } from 'socket.io-client';
 import { StateSnapshot } from './state.types';
 
-const DEFAULT_BACKEND_URL = 'http://localhost:3000';
+const DEFAULT_BACKEND_URL = '';
 const DEFAULT_BACKEND_API_KEY = 'dev-api-key';
 const BACKEND_URL_STORAGE_KEY = 'elite-backend-url';
 const BACKEND_API_KEY_STORAGE_KEY = 'elite-api-key';
@@ -371,7 +371,12 @@ export class RealtimeStateService {
       return queryValue;
     }
 
-    return this.readStorage(BACKEND_URL_STORAGE_KEY) || DEFAULT_BACKEND_URL;
+    const storedBackendUrl = this.readStorage(BACKEND_URL_STORAGE_KEY);
+    if (storedBackendUrl) {
+      return storedBackendUrl;
+    }
+
+    return DEFAULT_BACKEND_URL || window.location.origin;
   }
 
   private getApiKey(): string {
