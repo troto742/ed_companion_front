@@ -1,6 +1,7 @@
 import { NgClass, NgFor, NgIf } from '@angular/common';
 import { Component, Input, OnInit, inject } from '@angular/core';
-import { RealtimeStateService } from '../realtime-state.service';
+import { FormsModule } from '@angular/forms';
+import { RealtimeStateService, SpanshRoutePreviewRow } from '../realtime-state.service';
 import { StateSnapshot } from '../state.types';
 
 interface SavedRouteEntry {
@@ -13,12 +14,13 @@ interface SavedRouteEntry {
 }
 
 const SAVED_ROUTES_STORAGE_KEY = 'elite-companion-saved-routes';
+const EXACT_PLOTTER_STORAGE_KEY = 'elite-companion-exact-plotter';
 const MAX_SAVED_ROUTES = 15;
 
 @Component({
   selector: 'app-galaxy-route-panel',
   standalone: true,
-  imports: [NgIf, NgFor, NgClass],
+  imports: [NgIf, NgFor, NgClass, FormsModule],
   template: `
     <article class="panel compact" *ngIf="snapshot as snapshot">
       <div class="route-head">
@@ -48,6 +50,107 @@ const MAX_SAVED_ROUTES = 15;
           hidden
         />
       </div>
+
+      <section class="spansh-generator">
+        <p class="powered-by">
+          Powered by
+          <a href="https://spansh.co.uk" target="_blank" rel="noopener noreferrer">Spansh.co.uk</a>
+        </p>
+        <div class="generator-grid">
+          <label>
+            <span>Source</span>
+            <input
+              type="text"
+              [(ngModel)]="spanshSource"
+              [ngModelOptions]="{ standalone: true }"
+              [disabled]="uploadingRoute"
+              placeholder="Current system"
+            />
+          </label>
+          <label>
+            <span>Destination</span>
+            <input
+              type="text"
+              [(ngModel)]="spanshDestination"
+              [ngModelOptions]="{ standalone: true }"
+              [disabled]="uploadingRoute"
+              placeholder="Colonia"
+            />
+          </label>
+          <label>
+            <span>Jump Range</span>
+            <input
+              type="number"
+              min="1"
+              step="0.1"
+              [(ngModel)]="spanshJumpRange"
+              [ngModelOptions]="{ standalone: true }"
+              [disabled]="uploadingRoute"
+            />
+          </label>
+          <label>
+            <span>Efficiency</span>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              step="1"
+              [(ngModel)]="spanshEfficiency"
+              [ngModelOptions]="{ standalone: true }"
+              [disabled]="uploadingRoute"
+            />
+          </label>
+        </div>
+        <button type="button" (click)="generateSpanshRoute(snapshot)" [disabled]="uploadingRoute">
+          {{ uploadingRoute ? 'Generating...' : 'Generate via Spansh' }}
+        </button>
+      </section>
+
+      <section class="exact-plotter-assist">
+        <div class="exact-header">
+          <h3>Exact Plotter Assist</h3>
+          <p class="meta">
+            Paste an EDSY/Inara ship build. Elite Companion will remember it, copy it for you, and open
+            Spansh Exact Plotter in a new tab.
+          </p>
+        </div>
+        <div class="generator-grid">
+          <label>
+            <span>Source</span>
+            <input
+              type="text"
+              [(ngModel)]="exactSource"
+              [ngModelOptions]="{ standalone: true }"
+              [disabled]="uploadingRoute"
+              placeholder="Current system"
+            />
+          </label>
+          <label>
+            <span>Destination</span>
+            <input
+              type="text"
+              [(ngModel)]="exactDestination"
+              [ngModelOptions]="{ standalone: true }"
+              [disabled]="uploadingRoute"
+              placeholder="Colonia"
+            />
+          </label>
+        </div>
+        <label class="build-label">
+          <span>Ship Build</span>
+          <textarea
+            rows="7"
+            [(ngModel)]="exactShipBuild"
+            [ngModelOptions]="{ standalone: true }"
+            [disabled]="uploadingRoute"
+            placeholder="Paste the EDSY or Inara ship build export here"
+          ></textarea>
+        </label>
+        <div class="exact-actions">
+          <button type="button" (click)="saveExactPlotterDraft(snapshot)">Save Build</button>
+          <button type="button" (click)="openSpanshExactPlotter(snapshot)">Open Spansh Exact Plotter</button>
+        </div>
+      </section>
 
       <p class="meta progress-line">
         <span>Progress: {{ formatPercent(getRouteProgress(snapshot)) }}</span>
@@ -245,6 +348,84 @@ const MAX_SAVED_ROUTES = 15;
       padding-top: 10px;
     }
 
+    .spansh-generator {
+      margin-bottom: 10px;
+      padding: 10px;
+      border: 3px solid var(--panel-border);
+      background: var(--table-bg);
+      display: grid;
+      gap: 10px;
+    }
+
+    .generator-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .generator-grid label {
+      display: grid;
+      gap: 6px;
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+
+    .generator-grid input {
+      border: 3px solid var(--panel-border);
+      background: var(--button-bg);
+      color: var(--button-text);
+      padding: 6px 8px;
+      font: inherit;
+    }
+
+    .powered-by {
+      margin: 0;
+      font-size: 0.95rem;
+      opacity: 0.85;
+    }
+
+    .powered-by a {
+      color: inherit;
+      font-weight: 700;
+    }
+
+    .exact-plotter-assist {
+      margin-bottom: 10px;
+      padding: 10px;
+      border: 3px solid var(--panel-border);
+      background: var(--table-bg);
+      display: grid;
+      gap: 10px;
+    }
+
+    .exact-header h3 {
+      margin: 0 0 6px;
+      font-size: 1.35rem;
+      letter-spacing: 0.4px;
+    }
+
+    .build-label {
+      display: grid;
+      gap: 6px;
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+
+    .build-label textarea {
+      border: 3px solid var(--panel-border);
+      background: var(--button-bg);
+      color: var(--button-text);
+      padding: 8px 10px;
+      font: inherit;
+      resize: vertical;
+    }
+
+    .exact-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     .route-star-info h3 {
       margin: 0 0 8px;
       font-size: 1.35rem;
@@ -300,6 +481,18 @@ const MAX_SAVED_ROUTES = 15;
       font-size: 1.05rem;
       font-weight: 700;
     }
+
+    @media (max-width: 920px) {
+      .generator-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .generator-grid {
+        grid-template-columns: 1fr;
+      }
+    }
   `,
 })
 export class GalaxyRoutePanelComponent implements OnInit {
@@ -313,11 +506,19 @@ export class GalaxyRoutePanelComponent implements OnInit {
   csvRowSystems: string[] = [];
   savedRoutes: SavedRouteEntry[] = [];
   selectedSavedRouteId = '';
+  spanshSource = '';
+  spanshDestination = '';
+  spanshJumpRange = 60;
+  spanshEfficiency = 25;
+  exactSource = '';
+  exactDestination = '';
+  exactShipBuild = '';
 
   private readonly state = inject(RealtimeStateService);
 
   ngOnInit(): void {
     this.loadSavedRoutesFromStorage();
+    this.loadExactPlotterDraft();
   }
 
   onRouteFileSelected(event: Event): void {
@@ -348,6 +549,73 @@ export class GalaxyRoutePanelComponent implements OnInit {
         this.uploadingRoute = false;
       },
     });
+  }
+
+  generateSpanshRoute(snapshot: StateSnapshot): void {
+    const sourceSystem = this.spanshSource.trim() || snapshot.location.starSystem?.trim() || '';
+    const destinationSystem = this.spanshDestination.trim();
+
+    if (!sourceSystem || !destinationSystem) {
+      this.routeUploadError = 'Source and destination systems are required to generate a Spansh route.';
+      return;
+    }
+
+    this.uploadingRoute = true;
+    this.routeUploadError = null;
+    this.copyMessage = null;
+
+    this.state.generateSpanshRoute({
+      sourceSystem,
+      destinationSystem,
+      jumpRange: this.spanshJumpRange,
+      efficiency: this.spanshEfficiency,
+    }).subscribe({
+      next: (result) => {
+        this.routeUploadError = null;
+        this.uploadingRoute = false;
+        this.spanshSource = sourceSystem;
+        this.applySpanshPreview(result.previewRows);
+        const generatedFile = this.buildSpanshCsvFile(result.routeName, result.previewRows);
+        void this.saveRouteToStorage(generatedFile, result.routeName);
+      },
+      error: (error: unknown) => {
+        const apiError = (error as { error?: { error?: unknown } })?.error?.error;
+        this.routeUploadError =
+          typeof apiError === 'string' ? apiError : 'No se pudo generar la ruta con Spansh.';
+        this.uploadingRoute = false;
+      },
+    });
+  }
+
+  saveExactPlotterDraft(snapshot: StateSnapshot): void {
+    this.persistExactPlotterDraft(snapshot);
+    this.copyMessage = 'Exact plotter build saved locally.';
+    this.routeUploadError = null;
+  }
+
+  openSpanshExactPlotter(snapshot: StateSnapshot): void {
+    const draft = this.buildExactPlotterDraft(snapshot);
+    if (!draft.source || !draft.destination) {
+      this.routeUploadError = 'Source and destination systems are required for Exact Plotter.';
+      return;
+    }
+
+    if (!draft.shipBuild) {
+      this.routeUploadError = 'Ship build is required for Exact Plotter.';
+      return;
+    }
+
+    this.persistExactPlotterDraft(snapshot);
+    void this.copyToClipboard(draft.shipBuild)
+      .then(() => {
+        this.copyMessage = 'Ship build copied. Paste it into Spansh Exact Plotter.';
+      })
+      .catch(() => {
+        this.copyMessage = 'Opened Spansh Exact Plotter. Copy the ship build manually if needed.';
+      })
+      .finally(() => {
+        window.open('https://spansh.co.uk/exact-plotter', '_blank', 'noopener');
+      });
   }
 
   onSavedRouteSelected(event: Event): void {
@@ -530,6 +798,44 @@ export class GalaxyRoutePanelComponent implements OnInit {
     return fileName.slice(0, dotIndex).trim();
   }
 
+  private applySpanshPreview(rows: SpanshRoutePreviewRow[]): void {
+    this.csvHeaders = ['System', 'Distance', 'Remaining', 'Estimated jumps', 'Neutron'];
+    this.csvRows = rows.map((row) => [
+      row.systemName,
+      row.distance === null ? '' : row.distance.toFixed(2),
+      row.distanceRemaining === null ? '' : row.distanceRemaining.toFixed(2),
+      row.estimatedJumps === null ? '' : String(row.estimatedJumps),
+      row.neutronStar ? 'Yes' : 'No',
+    ]);
+    this.csvRowSystems = rows.map((row) => row.systemName);
+  }
+
+  private buildSpanshCsvFile(routeName: string, rows: SpanshRoutePreviewRow[]): File {
+    const csvLines = [
+      ['systemName', 'distance', 'distanceRemaining', 'estimatedJumps', 'neutronStar'].join(','),
+      ...rows.map((row) => [
+        this.escapeCsvCell(row.systemName),
+        row.distance ?? '',
+        row.distanceRemaining ?? '',
+        row.estimatedJumps ?? '',
+        row.neutronStar ? 'true' : 'false',
+      ].join(',')),
+    ];
+
+    return new File([csvLines.join('\n')], `${routeName}.csv`, {
+      type: 'text/csv',
+      lastModified: Date.now(),
+    });
+  }
+
+  private escapeCsvCell(value: string): string {
+    if (!value.includes(',') && !value.includes('"') && !value.includes('\n')) {
+      return value;
+    }
+
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+
   private async prepareCsvPreview(file: File): Promise<void> {
     if (!file.name.toLowerCase().endsWith('.csv')) {
       this.csvHeaders = [];
@@ -668,6 +974,48 @@ export class GalaxyRoutePanelComponent implements OnInit {
 
   private normalizeSystemName(value: string | null | undefined): string {
     return (value ?? '').trim().toLowerCase();
+  }
+
+  private loadExactPlotterDraft(): void {
+    try {
+      const raw = localStorage.getItem(EXACT_PLOTTER_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as { source?: string; destination?: string; shipBuild?: string };
+      this.exactSource = typeof parsed.source === 'string' ? parsed.source : '';
+      this.exactDestination = typeof parsed.destination === 'string' ? parsed.destination : '';
+      this.exactShipBuild = typeof parsed.shipBuild === 'string' ? parsed.shipBuild : '';
+    } catch {
+      this.exactSource = '';
+      this.exactDestination = '';
+      this.exactShipBuild = '';
+    }
+  }
+
+  private persistExactPlotterDraft(snapshot: StateSnapshot): void {
+    const draft = this.buildExactPlotterDraft(snapshot);
+    this.exactSource = draft.source;
+    this.exactDestination = draft.destination;
+
+    try {
+      localStorage.setItem(EXACT_PLOTTER_STORAGE_KEY, JSON.stringify(draft));
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  private buildExactPlotterDraft(snapshot: StateSnapshot): {
+    source: string;
+    destination: string;
+    shipBuild: string;
+  } {
+    return {
+      source: this.exactSource.trim() || snapshot.location.starSystem?.trim() || '',
+      destination: this.exactDestination.trim(),
+      shipBuild: this.exactShipBuild.trim(),
+    };
   }
 
   private async copyToClipboard(value: string): Promise<void> {

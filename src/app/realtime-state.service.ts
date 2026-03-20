@@ -15,6 +15,21 @@ interface RouteUploadResponse {
   legs: number;
 }
 
+export interface SpanshRoutePreviewRow {
+  systemName: string;
+  distance: number | null;
+  distanceRemaining: number | null;
+  estimatedJumps: number | null;
+  neutronStar: boolean;
+}
+
+interface SpanshRouteResponse {
+  routeLoaded: boolean;
+  routeName: string;
+  legs: number;
+  previewRows: SpanshRoutePreviewRow[];
+}
+
 export interface CommoditySearchStation {
   marketId: number | null;
   systemName: string;
@@ -266,6 +281,20 @@ export class RealtimeStateService {
     }
 
     return this.http.post<RouteUploadResponse>(`${this.getBackendUrl()}/api/route/upload`, body, {
+      headers: {
+        'x-api-key': this.getApiKey(),
+      },
+    });
+  }
+
+  generateSpanshRoute(request: {
+    sourceSystem: string;
+    destinationSystem: string;
+    jumpRange: number;
+    efficiency: number;
+    via?: string[];
+  }): Observable<SpanshRouteResponse> {
+    return this.http.post<SpanshRouteResponse>(`${this.getBackendUrl()}/api/route/spansh`, request, {
       headers: {
         'x-api-key': this.getApiKey(),
       },
