@@ -20,6 +20,7 @@ export interface SpanshRoutePreviewRow {
   distance: number | null;
   distanceRemaining: number | null;
   estimatedJumps: number | null;
+  refuel: boolean;
   neutronStar: boolean;
 }
 

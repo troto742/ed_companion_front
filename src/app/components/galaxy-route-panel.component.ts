@@ -849,12 +849,13 @@ export class GalaxyRoutePanelComponent implements OnInit {
   }
 
   private applySpanshPreview(rows: SpanshRoutePreviewRow[]): void {
-    this.csvHeaders = ['System', 'Distance', 'Remaining', 'Estimated jumps', 'Neutron'];
+    this.csvHeaders = ['System', 'Distance', 'Remaining', 'Estimated jumps', 'Refuel', 'Neutron'];
     this.csvRows = rows.map((row) => [
       row.systemName,
       row.distance === null ? '' : row.distance.toFixed(2),
       row.distanceRemaining === null ? '' : row.distanceRemaining.toFixed(2),
       row.estimatedJumps === null ? '' : String(row.estimatedJumps),
+      row.refuel ? 'Yes' : 'No',
       row.neutronStar ? 'Yes' : 'No',
     ]);
     this.csvRowSystems = rows.map((row) => row.systemName);
@@ -862,12 +863,13 @@ export class GalaxyRoutePanelComponent implements OnInit {
 
   private buildSpanshCsvFile(routeName: string, rows: SpanshRoutePreviewRow[]): File {
     const csvLines = [
-      ['systemName', 'distance', 'distanceRemaining', 'estimatedJumps', 'neutronStar'].join(','),
+      ['systemName', 'distance', 'distanceRemaining', 'estimatedJumps', 'refuel', 'neutronStar'].join(','),
       ...rows.map((row) => [
         this.escapeCsvCell(row.systemName),
         row.distance ?? '',
         row.distanceRemaining ?? '',
         row.estimatedJumps ?? '',
+        row.refuel ? 'true' : 'false',
         row.neutronStar ? 'true' : 'false',
       ].join(',')),
     ];
