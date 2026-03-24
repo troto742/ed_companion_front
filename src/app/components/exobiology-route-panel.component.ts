@@ -122,18 +122,18 @@ interface SavedRouteEntry {
         <button
           type="button"
           (click)="saveFilteredRoute(snapshot)"
-          [disabled]="importingRoute || filteredSystems.length === 0"
+          [disabled]="importingRoute || filteredCurrentRouteSystems.length === 0"
         >
           {{ importingRoute ? 'Saving...' : 'Save Filtered Route' }}
         </button>
         <p class="meta small">
-          Showing {{ filteredSystems.length }} / {{ exobiologySystems.length }} systems.
+          Showing {{ filteredCurrentRouteSystems.length }} / {{ currentRouteSystems.length }} systems from current route.
         </p>
       </section>
 
-      <section class="systems-list" *ngIf="exobiologySystems.length > 0">
+      <section class="systems-list" *ngIf="currentRouteSystems.length > 0">
         <h3>Systems And Planets</h3>
-        <details class="system-card" *ngFor="let system of filteredSystems; trackBy: trackBySystem">
+        <details class="system-card" *ngFor="let system of filteredCurrentRouteSystems; trackBy: trackBySystem">
           <summary>
             <span class="system-name">{{ system.systemName }}</span>
             <span class="system-distance">{{ formatLy(system.distanceLy) }}</span>
@@ -395,11 +395,48 @@ export class ExobiologyRoutePanelComponent implements OnInit {
     this.loadSavedRoutesFromStorage();
   }
 
-  get filteredSystems(): SpanshExobiologySystemCandidate[] {
+  get currentRouteSystems(): SpanshExobiologySystemCandidate[] {
+    const legs = this.snapshot?.route?.legs ?? [];
+    if (legs.length === 0) {
+      return [];
+    }
+
+    const bySystem = new Map<string, SpanshExobiologySystemCandidate>();
+    for (const system of this.exobiologySystems) {
+      bySystem.set(this.normalizeSystemName(system.systemName), system);
+    }
+
+    const uniqueFromRoute: SpanshExobiologySystemCandidate[] = [];
+    const seenRouteSystems = new Set<string>();
+    for (const leg of legs) {
+      const systemName = leg.systemName?.trim();
+      if (!systemName) {
+        continue;
+      }
+
+      const normalized = this.normalizeSystemName(systemName);
+      if (seenRouteSystems.has(normalized)) {
+        continue;
+      }
+      seenRouteSystems.add(normalized);
+
+      const exobioSystem = bySystem.get(normalized);
+      uniqueFromRoute.push({
+        systemName,
+        distanceLy: exobioSystem?.distanceLy ?? leg.distance ?? null,
+        nearestBodyLs: exobioSystem?.nearestBodyLs ?? null,
+        bodies: exobioSystem?.bodies ?? []
+      });
+    }
+
+    return uniqueFromRoute;
+  }
+
+  get filteredCurrentRouteSystems(): SpanshExobiologySystemCandidate[] {
     const minLy = this.parseMinFilter(this.minLyFilter);
     const minLs = this.parseMinFilter(this.minLsFilter);
 
-    return this.exobiologySystems
+    return this.currentRouteSystems
       .filter((system) => {
         const lyAllowed = minLy === null || (system.distanceLy !== null && system.distanceLy >= minLy);
         const lsAllowed = minLs === null || (system.nearestBodyLs !== null && system.nearestBodyLs >= minLs);
@@ -505,7 +542,7 @@ export class ExobiologyRoutePanelComponent implements OnInit {
   }
 
   saveFilteredRoute(snapshot: StateSnapshot): void {
-    if (this.filteredSystems.length === 0) {
+    if (this.filteredCurrentRouteSystems.length === 0) {
       this.routeImportError = 'No filtered systems available to save.';
       return;
     }
@@ -515,7 +552,7 @@ export class ExobiologyRoutePanelComponent implements OnInit {
       snapshot.location.starSystem?.trim() ||
       'stratum-tectonica';
     const routeName = `${initialSystem} Stratum Tectonica`;
-    const routeFile = this.buildFilteredRouteCsvFile(routeName, this.filteredSystems);
+    const routeFile = this.buildFilteredRouteCsvFile(routeName, this.filteredCurrentRouteSystems);
 
     this.importingRoute = true;
     this.routeImportError = null;
@@ -606,6 +643,10 @@ export class ExobiologyRoutePanelComponent implements OnInit {
     return parsed;
   }
 
+  private normalizeSystemName(value: string | null | undefined): string {
+    return (value ?? '').trim().toLowerCase();
+  }
+
   formatSavedDate(timestamp: string): string {
     const parsed = Date.parse(timestamp);
     if (Number.isNaN(parsed)) {
@@ -624,6 +665,7 @@ export class ExobiologyRoutePanelComponent implements OnInit {
     routeName: string,
     systems: SpanshExobiologySystemCandidate[]
   ): File {
+    const safeFileName = routeName.replace(/[\\/:*?"<>|]/g, '-').trim() || 'stratum-tectonica-route';
     const csvLines = [
       ['systemName', 'distance', 'distanceRemaining', 'estimatedJumps', 'refuel', 'neutronStar'].join(','),
       ...systems.map((system, index) => [
@@ -636,7 +678,7 @@ export class ExobiologyRoutePanelComponent implements OnInit {
       ].join(',')),
     ];
 
-    return new File([csvLines.join('\n')], `${routeName}.csv`, {
+    return new File([csvLines.join('\n')], `${safeFileName}.csv`, {
       type: 'text/csv',
       lastModified: Date.now(),
     });
