@@ -1,6 +1,10 @@
 import { NgFor, NgIf } from '@angular/common';
 import { Component, Input, inject } from '@angular/core';
-import { RealtimeStateService, SpanshRoutePreviewRow } from '../realtime-state.service';
+import { FormsModule } from '@angular/forms';
+import {
+  RealtimeStateService,
+  SpanshExobiologySystemCandidate,
+} from '../realtime-state.service';
 import { StateSnapshot } from '../state.types';
 
 const STRATUM_TECTONICA_ATMOSPHERES = [
@@ -22,7 +26,7 @@ const STRATUM_TECTONICA_SUBTYPES = ['High metal content world'];
 @Component({
   selector: 'app-exobiology-route-panel',
   standalone: true,
-  imports: [NgIf, NgFor],
+  imports: [NgIf, NgFor, FormsModule],
   template: `
     <article class="panel compact" *ngIf="snapshot as snapshot">
       <div class="panel-head">
@@ -39,8 +43,7 @@ const STRATUM_TECTONICA_SUBTYPES = ['High metal content world'];
           {{ snapshot.location.starSystem ?? 'Unknown' }}
         </p>
         <p class="meta small">
-          This button runs the fixed Stratum Tectonica filters from your HAR and uses your current
-          in-game system as reference_system.
+          Runs fixed Stratum Tectonica filters and uses your current system as reference_system.
         </p>
         <button
           type="button"
@@ -56,26 +59,69 @@ const STRATUM_TECTONICA_SUBTYPES = ['High metal content world'];
       <p class="success" *ngIf="importSuccessMessage">{{ importSuccessMessage }}</p>
       <p class="error" *ngIf="routeImportError">{{ routeImportError }}</p>
 
-      <section class="route-star-info" *ngIf="previewRows.length > 0">
-        <h3>Imported Preview</h3>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>System</th>
-                <th>Distance</th>
-                <th>Estimated jumps</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let row of previewRows">
-                <td>{{ row.systemName }}</td>
-                <td>{{ formatLy(row.distance) }}</td>
-                <td>{{ row.estimatedJumps ?? '-' }}</td>
-              </tr>
-            </tbody>
-          </table>
+      <section class="filters-box" *ngIf="exobiologySystems.length > 0">
+        <h3>Nearest Filters</h3>
+        <div class="filters-grid">
+          <label>
+            <span>Max LY</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              [(ngModel)]="maxLyFilter"
+              [ngModelOptions]="{ standalone: true }"
+              [disabled]="importingRoute"
+              placeholder="No limit"
+            />
+          </label>
+          <label>
+            <span>Max LS</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              [(ngModel)]="maxLsFilter"
+              [ngModelOptions]="{ standalone: true }"
+              [disabled]="importingRoute"
+              placeholder="No limit"
+            />
+          </label>
         </div>
+        <p class="meta small">
+          Showing {{ filteredSystems.length }} / {{ exobiologySystems.length }} systems.
+        </p>
+      </section>
+
+      <section class="systems-list" *ngIf="exobiologySystems.length > 0">
+        <h3>Systems And Planets</h3>
+        <details class="system-card" *ngFor="let system of filteredSystems; trackBy: trackBySystem">
+          <summary>
+            <span class="system-name">{{ system.systemName }}</span>
+            <span class="system-distance">{{ formatLy(system.distanceLy) }}</span>
+            <span class="system-ls">Nearest LS: {{ formatLs(system.nearestBodyLs) }}</span>
+            <span class="system-count">Bodies: {{ system.bodies.length }}</span>
+          </summary>
+          <div class="body-list-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Planet</th>
+                  <th>LS</th>
+                  <th>Subtype</th>
+                  <th>Atmosphere</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let body of system.bodies">
+                  <td>{{ body.bodyName }}</td>
+                  <td>{{ formatLs(body.distanceToArrivalLs) }}</td>
+                  <td>{{ body.subtype ?? '-' }}</td>
+                  <td>{{ body.atmosphere ?? '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
       </section>
     </article>
   `,
@@ -114,13 +160,35 @@ const STRATUM_TECTONICA_SUBTYPES = ['High metal content world'];
       font-weight: 700;
     }
 
-    .import-box {
+    .import-box,
+    .filters-box {
       margin-bottom: 10px;
       padding: 10px;
       border: 3px solid var(--panel-border);
       background: var(--table-bg);
       display: grid;
       gap: 10px;
+    }
+
+    .filters-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .filters-grid label {
+      display: grid;
+      gap: 6px;
+      font-size: 0.92rem;
+      font-weight: 700;
+    }
+
+    .filters-grid input {
+      border: 3px solid var(--panel-border);
+      background: var(--button-bg);
+      color: var(--button-text);
+      padding: 6px 8px;
+      font: inherit;
     }
 
     .meta {
@@ -163,28 +231,62 @@ const STRATUM_TECTONICA_SUBTYPES = ['High metal content world'];
       cursor: default;
     }
 
-    .route-star-info {
+    .systems-list {
       border-top: 4px solid #0a0a0a;
       margin-top: 10px;
       padding-top: 10px;
+      display: grid;
+      gap: 8px;
     }
 
-    .route-star-info h3 {
-      margin: 0 0 8px;
+    .systems-list h3 {
+      margin: 0 0 4px;
       font-size: 1.3rem;
     }
 
-    .table-wrap {
-      max-height: 460px;
-      overflow: auto;
+    .system-card {
       border: 3px solid var(--panel-border);
       background: var(--table-bg);
+      padding: 6px 8px;
+    }
+
+    .system-card summary {
+      display: grid;
+      grid-template-columns: minmax(200px, 1.5fr) minmax(95px, auto) minmax(120px, auto) minmax(90px, auto);
+      gap: 8px;
+      align-items: center;
+      cursor: pointer;
+      list-style: none;
+      font-weight: 700;
+    }
+
+    .system-card summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .system-name {
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .system-distance,
+    .system-ls,
+    .system-count {
+      font-size: 0.9rem;
+      opacity: 0.92;
+    }
+
+    .body-list-wrap {
+      margin-top: 8px;
+      max-height: 280px;
+      overflow: auto;
+      border: 1px solid var(--table-border);
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
     }
 
     th,
@@ -201,6 +303,16 @@ const STRATUM_TECTONICA_SUBTYPES = ['High metal content world'];
       background: var(--table-head-bg);
       z-index: 1;
     }
+
+    @media (max-width: 860px) {
+      .filters-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .system-card summary {
+        grid-template-columns: 1fr;
+      }
+    }
   `,
 })
 export class ExobiologyRoutePanelComponent {
@@ -209,9 +321,22 @@ export class ExobiologyRoutePanelComponent {
   importingRoute = false;
   routeImportError: string | null = null;
   importSuccessMessage: string | null = null;
-  previewRows: SpanshRoutePreviewRow[] = [];
+  exobiologySystems: SpanshExobiologySystemCandidate[] = [];
+  maxLyFilter = '';
+  maxLsFilter = '';
 
   private readonly state = inject(RealtimeStateService);
+
+  get filteredSystems(): SpanshExobiologySystemCandidate[] {
+    const maxLy = this.parseMaxFilter(this.maxLyFilter);
+    const maxLs = this.parseMaxFilter(this.maxLsFilter);
+
+    return this.exobiologySystems.filter((system) => {
+      const lyAllowed = maxLy === null || (system.distanceLy !== null && system.distanceLy <= maxLy);
+      const lsAllowed = maxLs === null || (system.nearestBodyLs !== null && system.nearestBodyLs <= maxLs);
+      return lyAllowed && lsAllowed;
+    });
+  }
 
   searchStratumTectonicaFarm(snapshot: StateSnapshot): void {
     const referenceSystem = snapshot.location.starSystem?.trim() ?? '';
@@ -224,6 +349,9 @@ export class ExobiologyRoutePanelComponent {
     this.importingRoute = true;
     this.routeImportError = null;
     this.importSuccessMessage = null;
+    this.exobiologySystems = [];
+    this.maxLyFilter = '';
+    this.maxLsFilter = '';
 
     this.state.importSpanshExobiologyRoute({
       search: {
@@ -261,8 +389,9 @@ export class ExobiologyRoutePanelComponent {
     }).subscribe({
       next: (result) => {
         this.importingRoute = false;
-        this.previewRows = result.previewRows;
-        this.importSuccessMessage = `Route loaded: ${result.routeName} (${result.legs} legs).`;
+        this.exobiologySystems = result.exobiologySystems ?? [];
+        this.importSuccessMessage =
+          `Route loaded: ${result.routeName} (${result.legs} systems, ${this.exobiologySystems.length} with body data).`;
       },
       error: (error: unknown) => {
         const apiError = (error as { error?: { error?: unknown } })?.error?.error;
@@ -273,11 +402,37 @@ export class ExobiologyRoutePanelComponent {
     });
   }
 
+  trackBySystem(_index: number, system: SpanshExobiologySystemCandidate): string {
+    return system.systemName;
+  }
+
   formatLy(value: number | null): string {
     if (value === null || Number.isNaN(value)) {
       return '-';
     }
 
     return `${value.toFixed(2)} LY`;
+  }
+
+  formatLs(value: number | null): string {
+    if (value === null || Number.isNaN(value)) {
+      return '-';
+    }
+
+    return `${Math.round(value).toLocaleString()} LS`;
+  }
+
+  private parseMaxFilter(value: string): number | null {
+    const normalized = value.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return null;
+    }
+
+    return parsed;
   }
 }

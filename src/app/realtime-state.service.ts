@@ -24,11 +24,26 @@ export interface SpanshRoutePreviewRow {
   neutronStar: boolean;
 }
 
+export interface SpanshExobiologyBodyCandidate {
+  bodyName: string;
+  distanceToArrivalLs: number | null;
+  subtype: string | null;
+  atmosphere: string | null;
+}
+
+export interface SpanshExobiologySystemCandidate {
+  systemName: string;
+  distanceLy: number | null;
+  nearestBodyLs: number | null;
+  bodies: SpanshExobiologyBodyCandidate[];
+}
+
 interface SpanshRouteResponse {
   routeLoaded: boolean;
   routeName: string;
   legs: number;
   previewRows: SpanshRoutePreviewRow[];
+  exobiologySystems?: SpanshExobiologySystemCandidate[];
 }
 
 export interface CommoditySearchStation {
