@@ -322,6 +322,43 @@ export class RealtimeStateService {
     });
   }
 
+  importSpanshExobiologyRoute(request: {
+    reference?: {
+      id64?: number | string;
+      name?: string;
+      x?: number;
+      y?: number;
+      z?: number;
+    };
+    search: {
+      filters: {
+        atmosphere: { value: string[] };
+        distance: { min: string | number; max: string | number };
+        gravity: { comparison: string; value: [string | number, string | number] };
+        subtype: { value: string[] };
+        updated_at: { comparison: string; value: [string, string] };
+      };
+      page: number;
+      reference_system: string;
+      reference_system_details?: {
+        id64?: number | string;
+        name: string;
+        x: number;
+        y: number;
+        z: number;
+      };
+      size: number;
+      sort: Array<Record<string, unknown>>;
+    };
+    searchReference?: string;
+  }): Observable<SpanshRouteResponse> {
+    return this.http.post<SpanshRouteResponse>(`${this.getBackendUrl()}/api/route/spansh/exobiology`, request, {
+      headers: {
+        'x-api-key': this.getApiKey(),
+      },
+    });
+  }
+
   createApiKey(label: string, adminKey: string, apiKey?: string): Observable<AdminCreateKeyResponse> {
     const body: { label: string; apiKey?: string } = { label: label.trim() };
     const customApiKey = apiKey?.trim();

@@ -1,6 +1,11 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 
-export type AppSection = 'route-planner' | 'mission-board' | 'colonization' | 'trade-recommendations';
+export type AppSection =
+  | 'route-planner'
+  | 'exobiology-routes'
+  | 'mission-board'
+  | 'colonization'
+  | 'trade-recommendations';
 
 @Component({
   selector: 'app-header',
@@ -17,6 +22,14 @@ export type AppSection = 'route-planner' | 'mission-board' | 'colonization' | 't
             (click)="sectionChange.emit('route-planner')"
           >
             System Route Planner
+          </button>
+          <button
+            type="button"
+            class="nav-tab"
+            [class.active]="activeSection === 'exobiology-routes'"
+            (click)="sectionChange.emit('exobiology-routes')"
+          >
+            Exobiology Routes
           </button>
           <button
             type="button"
