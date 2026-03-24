@@ -331,11 +331,40 @@ export class ExobiologyRoutePanelComponent {
     const maxLy = this.parseMaxFilter(this.maxLyFilter);
     const maxLs = this.parseMaxFilter(this.maxLsFilter);
 
-    return this.exobiologySystems.filter((system) => {
-      const lyAllowed = maxLy === null || (system.distanceLy !== null && system.distanceLy <= maxLy);
-      const lsAllowed = maxLs === null || (system.nearestBodyLs !== null && system.nearestBodyLs <= maxLs);
-      return lyAllowed && lsAllowed;
-    });
+    return this.exobiologySystems
+      .filter((system) => {
+        const lyAllowed = maxLy === null || (system.distanceLy !== null && system.distanceLy <= maxLy);
+        const lsAllowed = maxLs === null || (system.nearestBodyLs !== null && system.nearestBodyLs <= maxLs);
+        return lyAllowed && lsAllowed;
+      })
+      .sort((left, right) => {
+        const leftLs = left.nearestBodyLs;
+        const rightLs = right.nearestBodyLs;
+
+        if (leftLs === null && rightLs !== null) {
+          return 1;
+        }
+        if (leftLs !== null && rightLs === null) {
+          return -1;
+        }
+        if (leftLs !== null && rightLs !== null && leftLs !== rightLs) {
+          return leftLs - rightLs;
+        }
+
+        const leftLy = left.distanceLy;
+        const rightLy = right.distanceLy;
+        if (leftLy === null && rightLy !== null) {
+          return 1;
+        }
+        if (leftLy !== null && rightLy === null) {
+          return -1;
+        }
+        if (leftLy !== null && rightLy !== null && leftLy !== rightLy) {
+          return leftLy - rightLy;
+        }
+
+        return left.systemName.localeCompare(right.systemName);
+      });
   }
 
   searchStratumTectonicaFarm(snapshot: StateSnapshot): void {
