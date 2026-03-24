@@ -1,5 +1,5 @@
 import { NgFor, NgIf } from '@angular/common';
-import { Component, Input, inject } from '@angular/core';
+import { Component, Input, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
   RealtimeStateService,
@@ -22,6 +22,17 @@ const STRATUM_TECTONICA_ATMOSPHERES = [
 ];
 
 const STRATUM_TECTONICA_SUBTYPES = ['High metal content world'];
+const SAVED_ROUTES_STORAGE_KEY = 'elite-companion-saved-routes';
+const MAX_SAVED_ROUTES = 50;
+
+interface SavedRouteEntry {
+  id: string;
+  routeName: string;
+  fileName: string;
+  fileType: string;
+  uploadedAt: string;
+  encodedData: string;
+}
 
 @Component({
   selector: 'app-exobiology-route-panel',
@@ -54,6 +65,27 @@ const STRATUM_TECTONICA_SUBTYPES = ['High metal content world'];
         </button>
       </section>
 
+      <section class="saved-box">
+        <h3>Saved Routes</h3>
+        <div class="saved-actions">
+          <select
+            [disabled]="importingRoute || savedRoutes.length === 0"
+            [value]="selectedSavedRouteId"
+            (change)="onSavedRouteSelected($event)"
+            title="Saved routes"
+            aria-label="Saved routes"
+          >
+            <option value="">{{ savedRoutes.length > 0 ? 'Select saved route' : 'No saved routes' }}</option>
+            <option *ngFor="let route of savedRoutes" [value]="route.id">
+              {{ route.routeName }} ({{ formatSavedDate(route.uploadedAt) }})
+            </option>
+          </select>
+          <button type="button" (click)="loadSelectedSavedRoute()" [disabled]="importingRoute || !selectedSavedRouteId">
+            {{ importingRoute ? 'Loading...' : 'Load Saved Route' }}
+          </button>
+        </div>
+      </section>
+
       <p class="meta"><strong>Loaded route:</strong> {{ snapshot.route.routeName ?? 'None' }}</p>
       <p class="meta"><strong>Legs loaded:</strong> {{ snapshot.route.legs.length }}</p>
       <p class="success" *ngIf="importSuccessMessage">{{ importSuccessMessage }}</p>
@@ -63,30 +95,37 @@ const STRATUM_TECTONICA_SUBTYPES = ['High metal content world'];
         <h3>Nearest Filters</h3>
         <div class="filters-grid">
           <label>
-            <span>Max LY</span>
+            <span>Min LY</span>
             <input
               type="number"
               min="0"
               step="1"
-              [(ngModel)]="maxLyFilter"
+              [(ngModel)]="minLyFilter"
               [ngModelOptions]="{ standalone: true }"
               [disabled]="importingRoute"
               placeholder="No limit"
             />
           </label>
           <label>
-            <span>Max LS</span>
+            <span>Min LS</span>
             <input
               type="number"
               min="0"
               step="1"
-              [(ngModel)]="maxLsFilter"
+              [(ngModel)]="minLsFilter"
               [ngModelOptions]="{ standalone: true }"
               [disabled]="importingRoute"
               placeholder="No limit"
             />
           </label>
         </div>
+        <button
+          type="button"
+          (click)="saveFilteredRoute(snapshot)"
+          [disabled]="importingRoute || filteredSystems.length === 0"
+        >
+          {{ importingRoute ? 'Saving...' : 'Save Filtered Route' }}
+        </button>
         <p class="meta small">
           Showing {{ filteredSystems.length }} / {{ exobiologySystems.length }} systems.
         </p>
@@ -161,13 +200,35 @@ const STRATUM_TECTONICA_SUBTYPES = ['High metal content world'];
     }
 
     .import-box,
-    .filters-box {
+    .filters-box,
+    .saved-box {
       margin-bottom: 10px;
       padding: 10px;
       border: 3px solid var(--panel-border);
       background: var(--table-bg);
       display: grid;
       gap: 10px;
+    }
+
+    .saved-box h3 {
+      margin: 0;
+      font-size: 1.1rem;
+    }
+
+    .saved-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .saved-actions select {
+      border: 3px solid var(--panel-border);
+      background: var(--button-bg);
+      color: var(--button-text);
+      padding: 6px 8px;
+      font: inherit;
+      min-width: 280px;
     }
 
     .filters-grid {
@@ -315,26 +376,33 @@ const STRATUM_TECTONICA_SUBTYPES = ['High metal content world'];
     }
   `,
 })
-export class ExobiologyRoutePanelComponent {
+export class ExobiologyRoutePanelComponent implements OnInit {
   @Input({ required: true }) snapshot!: StateSnapshot;
 
   importingRoute = false;
   routeImportError: string | null = null;
   importSuccessMessage: string | null = null;
   exobiologySystems: SpanshExobiologySystemCandidate[] = [];
-  maxLyFilter = '';
-  maxLsFilter = '';
+  minLyFilter = '';
+  minLsFilter = '';
+  lastReferenceSystem = '';
+  savedRoutes: SavedRouteEntry[] = [];
+  selectedSavedRouteId = '';
 
   private readonly state = inject(RealtimeStateService);
 
+  ngOnInit(): void {
+    this.loadSavedRoutesFromStorage();
+  }
+
   get filteredSystems(): SpanshExobiologySystemCandidate[] {
-    const maxLy = this.parseMaxFilter(this.maxLyFilter);
-    const maxLs = this.parseMaxFilter(this.maxLsFilter);
+    const minLy = this.parseMinFilter(this.minLyFilter);
+    const minLs = this.parseMinFilter(this.minLsFilter);
 
     return this.exobiologySystems
       .filter((system) => {
-        const lyAllowed = maxLy === null || (system.distanceLy !== null && system.distanceLy <= maxLy);
-        const lsAllowed = maxLs === null || (system.nearestBodyLs !== null && system.nearestBodyLs <= maxLs);
+        const lyAllowed = minLy === null || (system.distanceLy !== null && system.distanceLy >= minLy);
+        const lsAllowed = minLs === null || (system.nearestBodyLs !== null && system.nearestBodyLs >= minLs);
         return lyAllowed && lsAllowed;
       })
       .sort((left, right) => {
@@ -379,8 +447,9 @@ export class ExobiologyRoutePanelComponent {
     this.routeImportError = null;
     this.importSuccessMessage = null;
     this.exobiologySystems = [];
-    this.maxLyFilter = '';
-    this.maxLsFilter = '';
+    this.minLyFilter = '';
+    this.minLsFilter = '';
+    this.lastReferenceSystem = referenceSystem;
 
     this.state.importSpanshExobiologyRoute({
       search: {
@@ -435,6 +504,78 @@ export class ExobiologyRoutePanelComponent {
     return system.systemName;
   }
 
+  saveFilteredRoute(snapshot: StateSnapshot): void {
+    if (this.filteredSystems.length === 0) {
+      this.routeImportError = 'No filtered systems available to save.';
+      return;
+    }
+
+    const initialSystem =
+      this.lastReferenceSystem.trim() ||
+      snapshot.location.starSystem?.trim() ||
+      'stratum-tectonica';
+    const routeName = `${initialSystem} Stratum Tectonica`;
+    const routeFile = this.buildFilteredRouteCsvFile(routeName, this.filteredSystems);
+
+    this.importingRoute = true;
+    this.routeImportError = null;
+
+    this.state.uploadRoute(routeFile, routeName).subscribe({
+      next: (result) => {
+        this.importingRoute = false;
+        this.importSuccessMessage = `Filtered route saved: ${result.routeName} (${result.legs} legs).`;
+        void this.saveRouteToStorage(routeFile, result.routeName);
+      },
+      error: (error: unknown) => {
+        const apiError = (error as { error?: { error?: unknown } })?.error?.error;
+        this.routeImportError =
+          typeof apiError === 'string' ? apiError : 'No se pudo guardar la ruta filtrada.';
+        this.importingRoute = false;
+      },
+    });
+  }
+
+  onSavedRouteSelected(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    this.selectedSavedRouteId = select.value;
+  }
+
+  loadSelectedSavedRoute(): void {
+    if (!this.selectedSavedRouteId) {
+      return;
+    }
+
+    const selectedRoute = this.savedRoutes.find((route) => route.id === this.selectedSavedRouteId);
+    if (!selectedRoute) {
+      this.routeImportError = 'Saved route not found.';
+      return;
+    }
+
+    let file: File;
+    try {
+      file = this.buildFileFromSavedRoute(selectedRoute);
+    } catch {
+      this.routeImportError = 'Saved route is invalid and could not be loaded.';
+      return;
+    }
+
+    this.importingRoute = true;
+    this.routeImportError = null;
+
+    this.state.uploadRoute(file, selectedRoute.routeName).subscribe({
+      next: (result) => {
+        this.importingRoute = false;
+        this.importSuccessMessage = `Loaded saved route: ${result.routeName} (${result.legs} legs).`;
+      },
+      error: (error: unknown) => {
+        const apiError = (error as { error?: { error?: unknown } })?.error?.error;
+        this.routeImportError =
+          typeof apiError === 'string' ? apiError : 'No se pudo cargar la ruta guardada.';
+        this.importingRoute = false;
+      },
+    });
+  }
+
   formatLy(value: number | null): string {
     if (value === null || Number.isNaN(value)) {
       return '-';
@@ -451,7 +592,7 @@ export class ExobiologyRoutePanelComponent {
     return `${Math.round(value).toLocaleString()} LS`;
   }
 
-  private parseMaxFilter(value: string): number | null {
+  private parseMinFilter(value: string): number | null {
     const normalized = value.trim();
     if (!normalized) {
       return null;
@@ -463,5 +604,161 @@ export class ExobiologyRoutePanelComponent {
     }
 
     return parsed;
+  }
+
+  formatSavedDate(timestamp: string): string {
+    const parsed = Date.parse(timestamp);
+    if (Number.isNaN(parsed)) {
+      return 'Unknown date';
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(parsed));
+  }
+
+  private buildFilteredRouteCsvFile(
+    routeName: string,
+    systems: SpanshExobiologySystemCandidate[]
+  ): File {
+    const csvLines = [
+      ['systemName', 'distance', 'distanceRemaining', 'estimatedJumps', 'refuel', 'neutronStar'].join(','),
+      ...systems.map((system, index) => [
+        this.escapeCsvCell(system.systemName),
+        system.distanceLy ?? '',
+        '',
+        Math.max(0, systems.length - index - 1),
+        'false',
+        'false',
+      ].join(',')),
+    ];
+
+    return new File([csvLines.join('\n')], `${routeName}.csv`, {
+      type: 'text/csv',
+      lastModified: Date.now(),
+    });
+  }
+
+  private escapeCsvCell(value: string): string {
+    if (!value.includes(',') && !value.includes('"') && !value.includes('\n')) {
+      return value;
+    }
+
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+
+  private loadSavedRoutesFromStorage(): void {
+    try {
+      const raw = localStorage.getItem(SAVED_ROUTES_STORAGE_KEY);
+      if (!raw) {
+        this.savedRoutes = [];
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) {
+        this.savedRoutes = [];
+        return;
+      }
+
+      this.savedRoutes = parsed
+        .filter((entry): entry is SavedRouteEntry => this.isSavedRouteEntry(entry))
+        .slice(0, MAX_SAVED_ROUTES);
+    } catch {
+      this.savedRoutes = [];
+    }
+  }
+
+  private async saveRouteToStorage(file: File, routeName: string): Promise<void> {
+    try {
+      const encodedData = await this.readFileAsBase64(file);
+      const uploadedAt = new Date().toISOString();
+      const existing = this.savedRoutes.filter(
+        (route) => this.normalizeRouteName(route.routeName) !== this.normalizeRouteName(routeName)
+      );
+
+      const routeToSave: SavedRouteEntry = {
+        id: this.createSavedRouteId(routeName),
+        routeName,
+        fileName: file.name,
+        fileType: file.type || 'application/octet-stream',
+        uploadedAt,
+        encodedData,
+      };
+
+      const nextRoutes = [routeToSave, ...existing].slice(0, MAX_SAVED_ROUTES);
+      localStorage.setItem(SAVED_ROUTES_STORAGE_KEY, JSON.stringify(nextRoutes));
+      this.savedRoutes = nextRoutes;
+      this.selectedSavedRouteId = routeToSave.id;
+    } catch {
+      // ignore local save errors
+    }
+  }
+
+  private isSavedRouteEntry(value: unknown): value is SavedRouteEntry {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const candidate = value as Partial<SavedRouteEntry>;
+    return (
+      typeof candidate.id === 'string' &&
+      typeof candidate.routeName === 'string' &&
+      typeof candidate.fileName === 'string' &&
+      typeof candidate.fileType === 'string' &&
+      typeof candidate.uploadedAt === 'string' &&
+      typeof candidate.encodedData === 'string'
+    );
+  }
+
+  private createSavedRouteId(routeName: string): string {
+    const normalized = routeName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    return `${normalized || 'route'}-${Date.now()}`;
+  }
+
+  private normalizeRouteName(value: string): string {
+    return value.trim().toLowerCase();
+  }
+
+  private async readFileAsBase64(file: File): Promise<string> {
+    const buffer = await file.arrayBuffer();
+    return this.arrayBufferToBase64(buffer);
+  }
+
+  private arrayBufferToBase64(buffer: ArrayBuffer): string {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const chunkSize = 0x8000;
+
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+      const chunk = bytes.subarray(index, index + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+
+    return btoa(binary);
+  }
+
+  private base64ToArrayBuffer(base64: string): ArrayBuffer {
+    const binary = atob(base64);
+    const length = binary.length;
+    const bytes = new Uint8Array(length);
+
+    for (let index = 0; index < length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+
+    return bytes.buffer;
+  }
+
+  private buildFileFromSavedRoute(savedRoute: SavedRouteEntry): File {
+    const buffer = this.base64ToArrayBuffer(savedRoute.encodedData);
+    const blob = new Blob([buffer], { type: savedRoute.fileType || 'application/octet-stream' });
+    return new File([blob], savedRoute.fileName, {
+      type: savedRoute.fileType || undefined,
+      lastModified: Date.parse(savedRoute.uploadedAt) || Date.now(),
+    });
   }
 }
