@@ -95,24 +95,24 @@ interface SavedRouteEntry {
         <h3>Nearest Filters</h3>
         <div class="filters-grid">
           <label>
-            <span>Min LY</span>
+            <span>Max LY</span>
             <input
               type="number"
               min="0"
               step="1"
-              [(ngModel)]="minLyFilter"
+              [(ngModel)]="maxLyFilter"
               [ngModelOptions]="{ standalone: true }"
               [disabled]="importingRoute"
               placeholder="No limit"
             />
           </label>
           <label>
-            <span>Min LS</span>
+            <span>Max LS</span>
             <input
               type="number"
               min="0"
               step="1"
-              [(ngModel)]="minLsFilter"
+              [(ngModel)]="maxLsFilter"
               [ngModelOptions]="{ standalone: true }"
               [disabled]="importingRoute"
               placeholder="No limit"
@@ -383,8 +383,8 @@ export class ExobiologyRoutePanelComponent implements OnInit {
   routeImportError: string | null = null;
   importSuccessMessage: string | null = null;
   exobiologySystems: SpanshExobiologySystemCandidate[] = [];
-  minLyFilter = '';
-  minLsFilter = '';
+  maxLyFilter = '';
+  maxLsFilter = '';
   lastReferenceSystem = '';
   savedRoutes: SavedRouteEntry[] = [];
   selectedSavedRouteId = '';
@@ -421,11 +421,12 @@ export class ExobiologyRoutePanelComponent implements OnInit {
       seenRouteSystems.add(normalized);
 
       const exobioSystem = bySystem.get(normalized);
+      const sortedBodies = this.sortBodiesByLs(exobioSystem?.bodies ?? []);
       uniqueFromRoute.push({
         systemName,
         distanceLy: exobioSystem?.distanceLy ?? leg.distance ?? null,
-        nearestBodyLs: exobioSystem?.nearestBodyLs ?? null,
-        bodies: exobioSystem?.bodies ?? []
+        nearestBodyLs: this.getNearestBodyLs(sortedBodies, exobioSystem?.nearestBodyLs ?? null),
+        bodies: sortedBodies
       });
     }
 
@@ -433,29 +434,16 @@ export class ExobiologyRoutePanelComponent implements OnInit {
   }
 
   get filteredCurrentRouteSystems(): SpanshExobiologySystemCandidate[] {
-    const minLy = this.parseMinFilter(this.minLyFilter);
-    const minLs = this.parseMinFilter(this.minLsFilter);
+    const maxLy = this.parseMaxFilter(this.maxLyFilter);
+    const maxLs = this.parseMaxFilter(this.maxLsFilter);
 
     return this.currentRouteSystems
       .filter((system) => {
-        const lyAllowed = minLy === null || (system.distanceLy !== null && system.distanceLy >= minLy);
-        const lsAllowed = minLs === null || (system.nearestBodyLs !== null && system.nearestBodyLs >= minLs);
+        const lyAllowed = maxLy === null || (system.distanceLy !== null && system.distanceLy <= maxLy);
+        const lsAllowed = maxLs === null || (system.nearestBodyLs !== null && system.nearestBodyLs <= maxLs);
         return lyAllowed && lsAllowed;
       })
       .sort((left, right) => {
-        const leftLs = left.nearestBodyLs;
-        const rightLs = right.nearestBodyLs;
-
-        if (leftLs === null && rightLs !== null) {
-          return 1;
-        }
-        if (leftLs !== null && rightLs === null) {
-          return -1;
-        }
-        if (leftLs !== null && rightLs !== null && leftLs !== rightLs) {
-          return leftLs - rightLs;
-        }
-
         const leftLy = left.distanceLy;
         const rightLy = right.distanceLy;
         if (leftLy === null && rightLy !== null) {
@@ -466,6 +454,18 @@ export class ExobiologyRoutePanelComponent implements OnInit {
         }
         if (leftLy !== null && rightLy !== null && leftLy !== rightLy) {
           return leftLy - rightLy;
+        }
+
+        const leftLs = left.nearestBodyLs;
+        const rightLs = right.nearestBodyLs;
+        if (leftLs === null && rightLs !== null) {
+          return 1;
+        }
+        if (leftLs !== null && rightLs === null) {
+          return -1;
+        }
+        if (leftLs !== null && rightLs !== null && leftLs !== rightLs) {
+          return leftLs - rightLs;
         }
 
         return left.systemName.localeCompare(right.systemName);
@@ -484,8 +484,8 @@ export class ExobiologyRoutePanelComponent implements OnInit {
     this.routeImportError = null;
     this.importSuccessMessage = null;
     this.exobiologySystems = [];
-    this.minLyFilter = '';
-    this.minLsFilter = '';
+    this.maxLyFilter = '';
+    this.maxLsFilter = '';
     this.lastReferenceSystem = referenceSystem;
 
     this.state.importSpanshExobiologyRoute({
@@ -629,7 +629,7 @@ export class ExobiologyRoutePanelComponent implements OnInit {
     return `${Math.round(value).toLocaleString()} LS`;
   }
 
-  private parseMinFilter(value: string): number | null {
+  private parseMaxFilter(value: string): number | null {
     const normalized = value.trim();
     if (!normalized) {
       return null;
@@ -641,6 +641,35 @@ export class ExobiologyRoutePanelComponent implements OnInit {
     }
 
     return parsed;
+  }
+
+  private sortBodiesByLs(
+    bodies: SpanshExobiologySystemCandidate['bodies']
+  ): SpanshExobiologySystemCandidate['bodies'] {
+    return [...bodies].sort((left, right) => {
+      const leftLs = left.distanceToArrivalLs;
+      const rightLs = right.distanceToArrivalLs;
+      if (leftLs === null && rightLs !== null) {
+        return 1;
+      }
+      if (leftLs !== null && rightLs === null) {
+        return -1;
+      }
+      if (leftLs !== null && rightLs !== null && leftLs !== rightLs) {
+        return leftLs - rightLs;
+      }
+      return left.bodyName.localeCompare(right.bodyName);
+    });
+  }
+
+  private getNearestBodyLs(
+    bodies: SpanshExobiologySystemCandidate['bodies'],
+    fallback: number | null
+  ): number | null {
+    const nearestWithDistance = bodies.find(
+      (body) => body.distanceToArrivalLs !== null && Number.isFinite(body.distanceToArrivalLs)
+    );
+    return nearestWithDistance?.distanceToArrivalLs ?? fallback;
   }
 
   private normalizeSystemName(value: string | null | undefined): string {
