@@ -512,7 +512,7 @@ export class ExobiologyRoutePanelComponent implements OnInit {
         },
         page: 0,
         reference_system: referenceSystem,
-        size: 10,
+        size: 30,
         sort: [
           {
             distance: {
