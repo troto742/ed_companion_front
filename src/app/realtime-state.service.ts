@@ -60,6 +60,7 @@ export interface CommoditySearchStation {
 export interface CommoditySearchResult {
   sourceSystem: string;
   commodity: string;
+  best?: CommoditySearchStation[];
   cheapest: CommoditySearchStation[];
   nearest: CommoditySearchStation[];
 }

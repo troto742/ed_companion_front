@@ -129,6 +129,7 @@ const LOCALIZED_COMMODITY_MARKET_NAMES: Record<string, string> = {
                   </button>
                 </th>
                 <th>Updated</th>
+                <th>Rank</th>
               </tr>
             </thead>
             <tbody>
@@ -139,6 +140,7 @@ const LOCALIZED_COMMODITY_MARKET_NAMES: Record<string, string> = {
                 <td>{{ formatInteger(row.supply) }}</td>
                 <td>{{ formatDistance(row.distanceLy) }}</td>
                 <td>{{ row.updatedAt ? (row.updatedAt | date:'short') : '-' }}</td>
+                <td>{{ row.rankLabel }}</td>
               </tr>
             </tbody>
           </table>
@@ -354,7 +356,7 @@ export class MissionBoardPanelComponent {
   private searchingMissionIds = new Set<number>();
   modalResult: CommoditySearchResult | null = null;
   modalMissionTitle = '';
-  sortField: 'price' | 'distanceLy' | 'supply' = 'price';
+  sortField: 'best' | 'price' | 'distanceLy' | 'supply' = 'best';
   sortDirection: 'asc' | 'desc' = 'asc';
 
   getMissionTitle(mission: MissionState): string {
@@ -414,7 +416,7 @@ export class MissionBoardPanelComponent {
 
     this.searchErrors[mission.missionId] = '';
     this.searchingMissionIds.add(mission.missionId);
-    this.state.searchCommodityMarkets(sourceSystem, commodity, 8, minSupply).subscribe({
+    this.state.searchCommodityMarkets(sourceSystem, commodity, 12, minSupply, 80).subscribe({
       next: (result) => {
         this.searchResults[mission.missionId] = result;
         this.modalResult = result;
@@ -474,13 +476,21 @@ export class MissionBoardPanelComponent {
     supply: number | null;
     distanceLy: number | null;
     updatedAt: string | null;
+    rankLabel: string;
+    bestRank: number;
   }> {
     const rows = this.getMergedTopRows(result);
+
+    if (this.sortField === 'best') {
+      return rows;
+    }
+
+    const sortField = this.sortField;
     const directionMultiplier = this.sortDirection === 'asc' ? 1 : -1;
 
     return [...rows].sort((left, right) => {
-      const leftValue = left[this.sortField];
-      const rightValue = right[this.sortField];
+      const leftValue = left[sortField];
+      const rightValue = right[sortField];
 
       if (leftValue === null && rightValue === null) {
         return 0;
@@ -505,6 +515,8 @@ export class MissionBoardPanelComponent {
     supply: number | null;
     distanceLy: number | null;
     updatedAt: string | null;
+    rankLabel: string;
+    bestRank: number;
   }> {
     const rows = new Map<string, {
       systemName: string;
@@ -513,9 +525,15 @@ export class MissionBoardPanelComponent {
       supply: number | null;
       distanceLy: number | null;
       updatedAt: string | null;
+      rankLabel: string;
+      bestRank: number;
     }>();
 
-    const add = (source: (typeof result.cheapest)[number] | undefined): void => {
+    const add = (
+      source: (typeof result.cheapest)[number] | undefined,
+      rankLabel: string,
+      bestRank: number,
+    ): void => {
       if (!source) {
         return;
       }
@@ -532,18 +550,26 @@ export class MissionBoardPanelComponent {
         supply: source.supply,
         distanceLy: source.distanceLy,
         updatedAt: source.updatedAt,
+        rankLabel,
+        bestRank,
       });
     };
 
-    for (const row of result.cheapest.slice(0, 6)) {
-      add(row);
+    for (const [index, row] of (result.best ?? []).slice(0, 8).entries()) {
+      add(row, `Best #${index + 1}`, index);
     }
 
-    for (const row of result.nearest.slice(0, 6)) {
-      add(row);
+    for (const [index, row] of result.nearest.slice(0, 4).entries()) {
+      add(row, `Near #${index + 1}`, 100 + index);
     }
 
-    return [...rows.values()].slice(0, 6);
+    for (const [index, row] of result.cheapest.slice(0, 4).entries()) {
+      add(row, `Cheap #${index + 1}`, 200 + index);
+    }
+
+    return [...rows.values()]
+      .sort((left, right) => left.bestRank - right.bestRank)
+      .slice(0, 10);
   }
 
   getMissionCargoLabel(mission: MissionState): string {
