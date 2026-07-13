@@ -5,16 +5,14 @@ import {
   RealtimeStateService,
 } from '../realtime-state.service';
 import { MissionState, StateSnapshot } from '../state.types';
+import commodityNameMapEs from '../data/commodity-name-map.es.json';
 
 interface DerivedMissionCommodity {
   displayName: string;
-  marketName: string;
   count: number | null;
 }
 
-const LOCALIZED_COMMODITY_MARKET_NAMES: Record<string, string> = {
-  oro: 'gold',
-};
+const LOCALIZED_COMMODITY_MARKET_NAMES = commodityNameMapEs as Record<string, string>;
 
 @Component({
   selector: 'app-mission-board-panel',
@@ -602,7 +600,6 @@ export class MissionBoardPanelComponent {
       if (displayName) {
         return {
           displayName,
-          marketName: this.getMarketCommodityName(displayName),
           count,
         };
       }
@@ -618,7 +615,16 @@ export class MissionBoardPanelComponent {
     }
 
     const key = normalized.toLowerCase();
-    return LOCALIZED_COMMODITY_MARKET_NAMES[key] ?? normalized;
+    return LOCALIZED_COMMODITY_MARKET_NAMES[this.normalizeCommodityLookupKey(key)] ?? normalized;
+  }
+
+  private normalizeCommodityLookupKey(value: string): string {
+    return value
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ');
   }
 
   private cleanMissionCommodityName(value: string): string {
