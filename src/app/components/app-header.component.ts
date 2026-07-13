@@ -5,6 +5,7 @@ export type AppSection =
   | 'fleet-carrier'
   | 'exobiology-routes'
   | 'mission-board'
+  | 'friends'
   | 'colonization'
   | 'trade-recommendations';
 
@@ -47,6 +48,14 @@ export type AppSection =
             (click)="sectionChange.emit('mission-board')"
           >
             Mission Board
+          </button>
+          <button
+            type="button"
+            class="nav-tab"
+            [class.active]="activeSection === 'friends'"
+            (click)="sectionChange.emit('friends')"
+          >
+            Friends
           </button>
           <button
             type="button"

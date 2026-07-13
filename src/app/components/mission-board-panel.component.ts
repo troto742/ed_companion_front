@@ -1,7 +1,8 @@
 import { DatePipe, NgFor, NgIf, SlicePipe } from '@angular/common';
-import { Component, Input, inject } from '@angular/core';
+import { Component, Input, OnInit, inject } from '@angular/core';
 import {
   CommoditySearchResult,
+  FriendSummary,
   RealtimeStateService,
 } from '../realtime-state.service';
 import { MissionState, StateSnapshot } from '../state.types';
@@ -84,6 +85,35 @@ const LOCALIZED_COMMODITY_MARKET_NAMES = commodityNameMapEs as Record<string, st
           </table>
         </div>
       </section>
+
+      <section class="mission-section">
+        <div class="section-head">
+          <h3>Friend Missions</h3>
+          <button type="button" class="search-btn" (click)="loadFriendMissions()" [disabled]="isLoadingFriends">
+            {{ isLoadingFriends ? 'Refreshing...' : 'Refresh' }}
+          </button>
+        </div>
+        <p class="error" *ngIf="friendMissionError">{{ friendMissionError }}</p>
+        <div class="mission-grid" *ngIf="friendsWithActiveMissions.length > 0; else noFriendMissions">
+          <article class="mission-card friend-card" *ngFor="let friend of friendsWithActiveMissions">
+            <div class="mission-card-head">
+              <strong>{{ friend.tenantLabel }}</strong>
+              <span class="badge status-active">{{ friend.missions.active.length }} active</span>
+            </div>
+            <p><strong>System:</strong> {{ friend.location.starSystem ?? '-' }}</p>
+            <p><strong>Ship:</strong> {{ getFriendShipLabel(friend) }}</p>
+            <div class="friend-mission-list">
+              <p *ngFor="let mission of friend.missions.active | slice:0:6">
+                <strong>{{ getMissionTitle(mission) }}</strong><br />
+                <span>
+                  {{ mission.originSystem ?? '-' }} -> {{ mission.destinationSystem ?? '-' }}
+                  | {{ formatCredits(mission.reward) }}
+                </span>
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
     </article>
 
     <ng-template #noActiveMissions>
@@ -92,6 +122,10 @@ const LOCALIZED_COMMODITY_MARKET_NAMES = commodityNameMapEs as Record<string, st
 
     <ng-template #noMissionHistory>
       <p class="placeholder">No mission completions/failures logged yet.</p>
+    </ng-template>
+
+    <ng-template #noFriendMissions>
+      <p class="placeholder">No accepted friends with active missions.</p>
     </ng-template>
 
     <section class="modal-backdrop" *ngIf="modalResult" (click)="closeCommodityModal()">
@@ -191,6 +225,14 @@ const LOCALIZED_COMMODITY_MARKET_NAMES = commodityNameMapEs as Record<string, st
       margin-top: 12px;
     }
 
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
     .mission-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
@@ -206,6 +248,20 @@ const LOCALIZED_COMMODITY_MARKET_NAMES = commodityNameMapEs as Record<string, st
     .mission-card p {
       margin: 4px 0;
       font-size: 0.96rem;
+    }
+
+    .friend-card {
+      background: color-mix(in srgb, var(--panel-bg) 84%, #ffffff 16%);
+    }
+
+    .friend-mission-list {
+      display: grid;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .friend-mission-list span {
+      opacity: 0.82;
     }
 
     .mission-card-head {
@@ -346,16 +402,23 @@ const LOCALIZED_COMMODITY_MARKET_NAMES = commodityNameMapEs as Record<string, st
     }
   `,
 })
-export class MissionBoardPanelComponent {
+export class MissionBoardPanelComponent implements OnInit {
   @Input({ required: true }) snapshot!: StateSnapshot;
   private readonly state = inject(RealtimeStateService);
   searchResults: Record<number, CommoditySearchResult> = {};
   searchErrors: Record<number, string> = {};
+  friendsWithActiveMissions: FriendSummary[] = [];
+  isLoadingFriends = false;
+  friendMissionError = '';
   private searchingMissionIds = new Set<number>();
   modalResult: CommoditySearchResult | null = null;
   modalMissionTitle = '';
   sortField: 'best' | 'price' | 'distanceLy' | 'supply' = 'best';
   sortDirection: 'asc' | 'desc' = 'asc';
+
+  ngOnInit(): void {
+    this.loadFriendMissions();
+  }
 
   getMissionTitle(mission: MissionState): string {
     const localized = mission.localizedName?.trim();
@@ -394,6 +457,29 @@ export class MissionBoardPanelComponent {
 
   isSearching(missionId: number): boolean {
     return this.searchingMissionIds.has(missionId);
+  }
+
+  loadFriendMissions(): void {
+    this.isLoadingFriends = true;
+    this.friendMissionError = '';
+    this.state.getFriendsDashboard().subscribe({
+      next: (dashboard) => {
+        this.friendsWithActiveMissions = dashboard.friends
+          .filter((friend) => friend.missions.active.length > 0)
+          .sort((left, right) => left.tenantLabel.localeCompare(right.tenantLabel));
+        this.isLoadingFriends = false;
+      },
+      error: () => {
+        this.friendMissionError = 'Could not load friend missions.';
+        this.isLoadingFriends = false;
+      },
+    });
+  }
+
+  getFriendShipLabel(friend: FriendSummary): string {
+    return [friend.ship.shipName, friend.ship.shipType, friend.ship.shipIdent]
+      .filter((value): value is string => Boolean(value?.trim()))
+      .join(' / ') || '-';
   }
 
   searchCommodityForMission(mission: MissionState): void {
