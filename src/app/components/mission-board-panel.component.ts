@@ -49,11 +49,13 @@ const LOCALIZED_COMMODITY_MARKET_NAMES = commodityNameMapEs as Record<string, st
               type="button"
               class="search-btn"
               (click)="searchCommodityForMission(mission)"
-              [disabled]="isSearching(mission.missionId)"
+              [disabled]="isSearching(getMissionSearchKey(mission))"
             >
-              {{ isSearching(mission.missionId) ? 'Searching...' : 'Commodity Search' }}
+              {{ isSearching(getMissionSearchKey(mission)) ? 'Searching...' : 'Commodity Search' }}
             </button>
-            <p class="error" *ngIf="searchErrors[mission.missionId]">{{ searchErrors[mission.missionId] }}</p>
+            <p class="error" *ngIf="searchErrors[getMissionSearchKey(mission)]">
+              {{ searchErrors[getMissionSearchKey(mission)] }}
+            </p>
           </article>
         </div>
       </section>
@@ -108,6 +110,18 @@ const LOCALIZED_COMMODITY_MARKET_NAMES = commodityNameMapEs as Record<string, st
                 <span>
                   {{ mission.originSystem ?? '-' }} -> {{ mission.destinationSystem ?? '-' }}
                   | {{ formatCredits(mission.reward) }}
+                </span>
+                <br />
+                <button
+                  type="button"
+                  class="search-btn compact"
+                  (click)="searchCommodityForMission(mission, friend)"
+                  [disabled]="isSearching(getFriendMissionSearchKey(friend, mission))"
+                >
+                  {{ isSearching(getFriendMissionSearchKey(friend, mission)) ? 'Searching...' : 'Commodity Search' }}
+                </button>
+                <span class="error inline-error" *ngIf="searchErrors[getFriendMissionSearchKey(friend, mission)]">
+                  {{ searchErrors[getFriendMissionSearchKey(friend, mission)] }}
                 </span>
               </p>
             </div>
@@ -283,11 +297,21 @@ const LOCALIZED_COMMODITY_MARKET_NAMES = commodityNameMapEs as Record<string, st
       margin-top: 6px;
     }
 
+    .search-btn.compact {
+      padding: 2px 7px;
+      font-size: 0.78rem;
+    }
+
     .error {
       margin: 6px 0 0;
       color: var(--error-color);
       font-size: 0.85rem;
       font-weight: 700;
+    }
+
+    .inline-error {
+      display: inline-block;
+      margin-left: 8px;
     }
 
     .badge {
@@ -405,12 +429,12 @@ const LOCALIZED_COMMODITY_MARKET_NAMES = commodityNameMapEs as Record<string, st
 export class MissionBoardPanelComponent implements OnInit {
   @Input({ required: true }) snapshot!: StateSnapshot;
   private readonly state = inject(RealtimeStateService);
-  searchResults: Record<number, CommoditySearchResult> = {};
-  searchErrors: Record<number, string> = {};
+  searchResults: Record<string, CommoditySearchResult> = {};
+  searchErrors: Record<string, string> = {};
   friendsWithActiveMissions: FriendSummary[] = [];
   isLoadingFriends = false;
   friendMissionError = '';
-  private searchingMissionIds = new Set<number>();
+  private searchingMissionIds = new Set<string>();
   modalResult: CommoditySearchResult | null = null;
   modalMissionTitle = '';
   sortField: 'best' | 'price' | 'distanceLy' | 'supply' = 'best';
@@ -455,8 +479,8 @@ export class MissionBoardPanelComponent implements OnInit {
     return `${Math.round(value).toLocaleString('en-US')} CR`;
   }
 
-  isSearching(missionId: number): boolean {
-    return this.searchingMissionIds.has(missionId);
+  isSearching(searchKey: string): boolean {
+    return this.searchingMissionIds.has(searchKey);
   }
 
   loadFriendMissions(): void {
@@ -482,8 +506,22 @@ export class MissionBoardPanelComponent implements OnInit {
       .join(' / ') || '-';
   }
 
-  searchCommodityForMission(mission: MissionState): void {
-    const sourceSystem = mission.originSystem?.trim() || this.snapshot.location.starSystem?.trim() || '';
+  getMissionSearchKey(mission: MissionState): string {
+    return `self:${mission.missionId}`;
+  }
+
+  getFriendMissionSearchKey(friend: FriendSummary, mission: MissionState): string {
+    return `${friend.tenantId}:${mission.missionId}`;
+  }
+
+  searchCommodityForMission(mission: MissionState, friend?: FriendSummary): void {
+    const searchKey = friend
+      ? this.getFriendMissionSearchKey(friend, mission)
+      : this.getMissionSearchKey(mission);
+    const sourceSystem = mission.originSystem?.trim()
+      || friend?.location.starSystem?.trim()
+      || this.snapshot.location.starSystem?.trim()
+      || '';
     const derivedCommodity = this.deriveCommodityFromMissionText(mission);
     const commodity = this.getMarketCommodityName(mission.commodity?.trim() || derivedCommodity?.displayName || '');
     const minSupply = mission.commodityCount && mission.commodityCount > 0
@@ -493,23 +531,25 @@ export class MissionBoardPanelComponent implements OnInit {
         : 1;
 
     if (!sourceSystem || !commodity) {
-      this.searchErrors[mission.missionId] =
+      this.searchErrors[searchKey] =
         'Missing source system or commodity. Mission title could not be parsed.';
       return;
     }
 
-    this.searchErrors[mission.missionId] = '';
-    this.searchingMissionIds.add(mission.missionId);
+    this.searchErrors[searchKey] = '';
+    this.searchingMissionIds.add(searchKey);
     this.state.searchCommodityMarkets(sourceSystem, commodity, 12, minSupply, 80).subscribe({
       next: (result) => {
-        this.searchResults[mission.missionId] = result;
+        this.searchResults[searchKey] = result;
         this.modalResult = result;
-        this.modalMissionTitle = this.getMissionTitle(mission);
-        this.searchingMissionIds.delete(mission.missionId);
+        this.modalMissionTitle = friend
+          ? `${friend.tenantLabel} | ${this.getMissionTitle(mission)}`
+          : this.getMissionTitle(mission);
+        this.searchingMissionIds.delete(searchKey);
       },
       error: () => {
-        this.searchErrors[mission.missionId] = 'Commodity search failed.';
-        this.searchingMissionIds.delete(mission.missionId);
+        this.searchErrors[searchKey] = 'Commodity search failed.';
+        this.searchingMissionIds.delete(searchKey);
       },
     });
   }
