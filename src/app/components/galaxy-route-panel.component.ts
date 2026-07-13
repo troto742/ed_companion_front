@@ -22,10 +22,17 @@ const MAX_SAVED_ROUTES = 15;
   standalone: true,
   imports: [NgIf, NgFor, NgClass, FormsModule],
   template: `
-    <article class="panel compact" *ngIf="snapshot as snapshot">
-      <div class="route-head">
-        <h2>Galaxy Route</h2>
-        <div class="route-actions">
+    <article class="route-planner" *ngIf="snapshot as snapshot">
+      <header class="planner-header">
+        <section>
+          <p class="eyebrow">System Route Planner</p>
+          <h2>{{ snapshot.route.routeName || 'No route loaded' }}</h2>
+          <p class="meta">
+            {{ snapshot.location.starSystem || 'Unknown system' }}
+            <span> / {{ getRouteMatchLabel(snapshot) }}</span>
+          </p>
+        </section>
+        <section class="quick-actions">
           <select
             [disabled]="uploadingRoute || savedRoutes.length === 0"
             (change)="onSavedRouteSelected($event)"
@@ -39,9 +46,9 @@ const MAX_SAVED_ROUTES = 15;
             </option>
           </select>
           <button type="button" (click)="routeInput.click()" [disabled]="uploadingRoute">
-            {{ uploadingRoute ? 'Uploading...' : 'Upload CSV' }}
+            {{ uploadingRoute ? 'Working...' : 'Upload Route' }}
           </button>
-        </div>
+        </section>
         <input
           #routeInput
           type="file"
@@ -49,164 +56,173 @@ const MAX_SAVED_ROUTES = 15;
           (change)="onRouteFileSelected($event)"
           hidden
         />
-      </div>
+      </header>
 
-      <section class="spansh-generator">
-        <p class="powered-by">
-          Powered by
-          <a href="https://spansh.co.uk" target="_blank" rel="noopener noreferrer">Spansh.co.uk</a>
-        </p>
-        <div class="generator-grid">
-          <label>
-            <span>Source</span>
-            <input
-              type="text"
-              [(ngModel)]="spanshSource"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-              placeholder="Current system"
-            />
-          </label>
-          <label>
-            <span>Destination</span>
-            <input
-              type="text"
-              [(ngModel)]="spanshDestination"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-              placeholder="Colonia"
-            />
-          </label>
-          <label>
-            <span>Jump Range</span>
-            <input
-              type="number"
-              min="1"
-              step="0.1"
-              [(ngModel)]="spanshJumpRange"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-            />
-          </label>
-          <label>
-            <span>Efficiency</span>
-            <input
-              type="number"
-              min="1"
-              max="100"
-              step="1"
-              [(ngModel)]="spanshEfficiency"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-            />
-          </label>
-        </div>
-        <button type="button" (click)="generateSpanshRoute(snapshot)" [disabled]="uploadingRoute">
-          {{ uploadingRoute ? 'Generating...' : 'Generate via Spansh' }}
-        </button>
+      <section class="summary-grid">
+        <article class="summary-tile next">
+          <span class="label">Next Star</span>
+          <strong>{{ snapshot.route.nextLeg?.systemName ?? '------' }}</strong>
+          <button
+            type="button"
+            class="copy-btn"
+            (click)="copyNextStar(snapshot)"
+            [disabled]="!snapshot.route.nextLeg?.systemName"
+          >
+            Copy
+          </button>
+        </article>
+        <article class="summary-tile">
+          <span class="label">Progress</span>
+          <strong>{{ formatPercent(getRouteProgress(snapshot)) }}</strong>
+          <div class="meter">
+            <span [style.width.%]="getRouteProgress(snapshot)"></span>
+          </div>
+        </article>
+        <article class="summary-tile">
+          <span class="label">Jumps Left</span>
+          <strong>{{ formatJumpsLeft(getJumpsLeft(snapshot)) }}</strong>
+        </article>
+        <article class="summary-tile">
+          <span class="label">Remaining</span>
+          <strong>{{ formatLy(getRemainingLy(snapshot)) }}</strong>
+        </article>
+        <article class="summary-tile">
+          <span class="label">Star Status</span>
+          <strong>{{ getStarStatus(snapshot) }}</strong>
+        </article>
       </section>
 
-      <section class="exact-plotter-assist">
-        <h3>Exact Plotter Assist</h3>
-        <p class="helper-copy">Paste a SLEF/Coriolis ship build to generate an exact route here.</p>
-        <div class="generator-grid">
-          <label>
-            <span>Source</span>
-            <input
-              type="text"
-              [(ngModel)]="exactSource"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-              placeholder="Current system"
-            />
-          </label>
-          <label>
-            <span>Destination</span>
-            <input
-              type="text"
-              [(ngModel)]="exactDestination"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-              placeholder="Colonia"
-            />
-          </label>
-          <label>
-            <span>Cargo</span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              [(ngModel)]="exactCargo"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-            />
-          </label>
-          <label>
-            <span>Reserve Fuel</span>
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              [(ngModel)]="exactFuelReserveSize"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-            />
-          </label>
-        </div>
-        <label class="build-label">
-          <span>Ship Build</span>
-          <textarea
-            rows="6"
-            [(ngModel)]="exactShipBuild"
-            [ngModelOptions]="{ standalone: true }"
-            [disabled]="uploadingRoute"
-            placeholder="Paste the SLEF or Coriolis ship export here"
-          ></textarea>
-        </label>
-        <div class="exact-actions">
-          <button type="button" (click)="saveExactPlotterDraft(snapshot)" [disabled]="uploadingRoute">
-            Save Build
+      <p class="feedback" *ngIf="copyMessage">{{ copyMessage }}</p>
+      <p class="error" *ngIf="routeUploadError">{{ routeUploadError }}</p>
+
+      <section class="tool-grid">
+        <section class="tool-panel">
+          <div class="section-head">
+            <h3>Fast Spansh Route</h3>
+            <a href="https://spansh.co.uk" target="_blank" rel="noopener noreferrer">Spansh</a>
+          </div>
+          <div class="input-grid">
+            <label>
+              Source
+              <input
+                type="text"
+                [(ngModel)]="spanshSource"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute"
+                placeholder="Current system"
+              />
+            </label>
+            <label>
+              Destination
+              <input
+                type="text"
+                [(ngModel)]="spanshDestination"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute"
+                placeholder="Colonia"
+              />
+            </label>
+            <label>
+              Jump Range
+              <input
+                type="number"
+                min="1"
+                step="0.1"
+                [(ngModel)]="spanshJumpRange"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute"
+              />
+            </label>
+            <label>
+              Efficiency
+              <input
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                [(ngModel)]="spanshEfficiency"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute"
+              />
+            </label>
+          </div>
+          <button type="button" (click)="generateSpanshRoute(snapshot)" [disabled]="uploadingRoute">
+            {{ uploadingRoute ? 'Generating...' : 'Generate Route' }}
           </button>
+        </section>
+
+        <section class="tool-panel">
+          <div class="section-head">
+            <h3>Exact Plotter</h3>
+            <button type="button" (click)="saveExactPlotterDraft(snapshot)" [disabled]="uploadingRoute">
+              Save Build
+            </button>
+          </div>
+          <div class="input-grid">
+            <label>
+              Source
+              <input
+                type="text"
+                [(ngModel)]="exactSource"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute"
+                placeholder="Current system"
+              />
+            </label>
+            <label>
+              Destination
+              <input
+                type="text"
+                [(ngModel)]="exactDestination"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute"
+                placeholder="Colonia"
+              />
+            </label>
+            <label>
+              Cargo
+              <input
+                type="number"
+                min="0"
+                step="1"
+                [(ngModel)]="exactCargo"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute"
+              />
+            </label>
+            <label>
+              Reserve Fuel
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                [(ngModel)]="exactFuelReserveSize"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute"
+              />
+            </label>
+          </div>
+          <label class="build-label">
+            Ship Build
+            <textarea
+              rows="5"
+              [(ngModel)]="exactShipBuild"
+              [ngModelOptions]="{ standalone: true }"
+              [disabled]="uploadingRoute"
+              placeholder="Paste SLEF or Coriolis export"
+            ></textarea>
+          </label>
           <button type="button" (click)="generateExactRoute(snapshot)" [disabled]="uploadingRoute">
             {{ uploadingRoute ? 'Generating...' : 'Generate Exact Route' }}
           </button>
-        </div>
+        </section>
       </section>
 
-      <p class="meta progress-line">
-        <span>Progress: {{ formatPercent(getRouteProgress(snapshot)) }}</span>
-        <span>Jumps left: {{ formatJumpsLeft(getJumpsLeft(snapshot)) }}</span>
-        <span>Star status: {{ getStarStatus(snapshot) }}</span>
-      </p>
-      <div class="meter route-meter">
-        <div class="fill" [style.width.%]="getRouteProgress(snapshot)"></div>
-      </div>
-
-      <p>
-        <strong>Current Star:</strong>
-        {{ snapshot.location.starSystem ?? '------' }}
-        <span class="meta-inline">({{ getRouteMatchLabel(snapshot) }})</span>
-      </p>
-      <p class="next-star-line">
-        <strong>Next Star:</strong>
-        <span>{{ snapshot.route.nextLeg?.systemName ?? '------' }}</span>
-        <button
-          type="button"
-          class="icon-btn"
-          (click)="copyNextStar(snapshot)"
-          [disabled]="!snapshot.route.nextLeg?.systemName"
-          title="Copy next star"
-          aria-label="Copy next star"
-        >
-          &#x29C9;
-        </button>
-      </p>
-      <p><strong>Remaining LY:</strong> {{ formatLy(getRemainingLy(snapshot)) }}</p>
-      <p class="meta" *ngIf="copyMessage">{{ copyMessage }}</p>
-      <p class="error" *ngIf="routeUploadError">{{ routeUploadError }}</p>
-
-      <section class="route-star-info">
-        <h3>Star Info</h3>
+      <section class="star-table">
+        <div class="section-head">
+          <h3>Route Systems</h3>
+          <span class="meta">{{ csvRows.length }} rows</span>
+        </div>
         <div class="table-wrap" *ngIf="csvHeaders.length > 0; else noCsvTable">
           <table>
             <thead>
@@ -231,253 +247,221 @@ const MAX_SAVED_ROUTES = 15;
     </article>
   `,
   styles: `
-    .panel {
-      background: var(--panel-bg);
-      border: 5px solid var(--panel-border);
-      padding: 14px;
+    .route-planner {
+      display: grid;
+      gap: 12px;
+    }
+
+    .planner-header,
+    .summary-tile,
+    .tool-panel,
+    .star-table {
+      border: 1px solid color-mix(in srgb, var(--panel-border) 55%, transparent);
+      background: color-mix(in srgb, var(--panel-bg) 96%, #ffffff 4%);
       box-sizing: border-box;
     }
 
-    .compact h2 {
-      margin: 0 0 10px;
-      font-size: 1.8rem;
-      letter-spacing: 0.4px;
+    .planner-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 16px;
+    }
+
+    .eyebrow,
+    .meta,
+    .feedback,
+    .placeholder {
+      margin: 0;
+      opacity: 0.78;
+    }
+
+    .eyebrow {
+      text-transform: uppercase;
+      font-size: 0.78rem;
       font-weight: 700;
     }
 
-    .route-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      margin-bottom: 6px;
-      flex-wrap: wrap;
+    h2,
+    h3 {
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: 0;
     }
 
-    .route-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-left: auto;
-      flex-wrap: wrap;
+    h2 {
+      font-size: 2rem;
+      line-height: 1.05;
     }
 
-    .panel p {
-      margin: 4px 0;
-      font-size: 1.4rem;
-      line-height: 1.25;
-    }
-
-    .meta {
-      font-size: 1.1rem;
-      opacity: 0.9;
-    }
-
-    .progress-line {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .meta-inline {
+    h3 {
       font-size: 1.05rem;
-      opacity: 0.85;
+    }
+
+    .quick-actions,
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .quick-actions select {
+      min-width: 240px;
+      max-width: 360px;
+    }
+
+    button,
+    select,
+    input,
+    textarea {
+      border: 1px solid color-mix(in srgb, var(--panel-border) 70%, transparent);
+      background: var(--button-bg);
+      color: var(--button-text);
+      font: inherit;
+      box-sizing: border-box;
+    }
+
+    button,
+    select {
+      padding: 8px 11px;
+      font-weight: 700;
     }
 
     button {
-      border: 4px solid var(--panel-border);
-      background: var(--button-bg);
-      color: var(--button-text);
-      padding: 4px 10px;
-      font-size: 1rem;
-      font-weight: 700;
       cursor: pointer;
     }
 
-    select {
-      border: 4px solid var(--panel-border);
-      background: var(--button-bg);
-      color: var(--button-text);
-      padding: 4px 8px;
-      font-size: 0.95rem;
+    button:disabled,
+    select:disabled,
+    input:disabled,
+    textarea:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 1.7fr) repeat(4, minmax(140px, 1fr));
+      gap: 10px;
+    }
+
+    .summary-tile {
+      min-height: 104px;
+      padding: 12px;
+      display: grid;
+      align-content: space-between;
+      gap: 8px;
+    }
+
+    .summary-tile.next {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+    }
+
+    .summary-tile.next .label,
+    .summary-tile.next strong {
+      grid-column: 1;
+    }
+
+    .label {
+      font-size: 0.76rem;
+      text-transform: uppercase;
       font-weight: 700;
-      min-width: 220px;
-      max-width: 340px;
+      opacity: 0.72;
     }
 
-    select:disabled {
-      opacity: 0.65;
-      cursor: default;
+    .summary-tile strong {
+      display: block;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-size: 1.35rem;
+      line-height: 1.12;
     }
 
-    button:disabled {
-      opacity: 0.65;
-      cursor: default;
+    .copy-btn {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      align-self: center;
     }
 
     .meter {
-      position: relative;
-      height: 44px;
-      border: 5px solid var(--panel-border);
+      height: 8px;
       background: var(--meter-bg);
       overflow: hidden;
     }
 
-    .fill {
-      position: absolute;
-      inset: 0 auto 0 0;
+    .meter span {
+      display: block;
+      height: 100%;
       background: var(--meter-fill);
       transition: width 250ms ease;
     }
 
-    .route-meter {
-      height: 30px;
-      margin-bottom: 8px;
-    }
-
-    .route-meter .fill {
-      background: repeating-linear-gradient(
-        90deg,
-        #000 0px,
-        #000 14px,
-        #262626 14px,
-        #262626 28px
-      );
-    }
-
-    .next-star-line {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .icon-btn {
-      border: 3px solid var(--panel-border);
-      background: var(--button-bg);
-      padding: 0 8px;
-      font-size: 1rem;
-      line-height: 1.6;
-      min-width: 34px;
-    }
-
-    .route-star-info {
-      border-top: 4px solid #0a0a0a;
-      margin-top: 10px;
-      padding-top: 10px;
-    }
-
-    .spansh-generator {
-      margin-bottom: 10px;
-      padding: 10px;
-      border: 3px solid var(--panel-border);
-      background: var(--table-bg);
+    .tool-grid {
       display: grid;
-      gap: 10px;
+      grid-template-columns: repeat(2, minmax(320px, 1fr));
+      gap: 12px;
     }
 
-    .generator-grid {
+    .tool-panel,
+    .star-table {
+      padding: 14px;
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
+      gap: 12px;
     }
 
-    .generator-grid label {
-      display: grid;
-      gap: 6px;
-      font-size: 0.95rem;
-      font-weight: 700;
-    }
-
-    .generator-grid input {
-      border: 3px solid var(--panel-border);
-      background: var(--button-bg);
-      color: var(--button-text);
-      padding: 6px 8px;
-      font: inherit;
-    }
-
-    .powered-by {
-      margin: 0;
-      font-size: 0.78rem;
-      opacity: 0.85;
-    }
-
-    .powered-by a {
+    .section-head a {
       color: inherit;
       font-weight: 700;
     }
 
-    .exact-plotter-assist {
-      margin-bottom: 10px;
-      padding: 10px;
-      border: 3px solid var(--panel-border);
-      background: var(--table-bg);
+    .input-grid {
       display: grid;
+      grid-template-columns: repeat(2, minmax(140px, 1fr));
       gap: 10px;
     }
 
-    .exact-plotter-assist h3 {
-      margin: 0;
-      font-size: 1.05rem;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-
-    .helper-copy {
-      margin: 0;
-      font-size: 0.8rem;
-      line-height: 1.25;
-      opacity: 0.8;
-    }
-
+    label,
     .build-label {
       display: grid;
       gap: 6px;
-      font-size: 0.9rem;
+      font-size: 0.82rem;
       font-weight: 700;
+      text-transform: uppercase;
     }
 
-    .build-label textarea {
-      border: 3px solid var(--panel-border);
-      background: var(--button-bg);
-      color: var(--button-text);
-      padding: 8px 10px;
-      font: inherit;
+    input,
+    textarea {
+      width: 100%;
+      padding: 8px 9px;
+    }
+
+    textarea {
       resize: vertical;
-    }
-
-    .exact-actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .route-star-info h3 {
-      margin: 0 0 8px;
-      font-size: 1.35rem;
-      letter-spacing: 0.4px;
+      min-height: 118px;
     }
 
     .table-wrap {
-      max-height: 360px;
+      max-height: 420px;
       overflow: auto;
-      border: 3px solid var(--panel-border);
+      border: 1px solid color-mix(in srgb, var(--panel-border) 55%, transparent);
       background: var(--table-bg);
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
     }
 
     th,
     td {
-      border: 1px solid var(--table-border);
-      padding: 6px 8px;
+      border-bottom: 1px solid var(--table-border);
+      padding: 7px 8px;
       text-align: left;
       white-space: nowrap;
     }
@@ -490,36 +474,46 @@ const MAX_SAVED_ROUTES = 15;
     }
 
     tbody tr.row-current td {
-      background: #ffe08a;
+      background: color-mix(in srgb, #f5c84b 72%, var(--table-bg) 28%);
       font-weight: 700;
     }
 
     tbody tr.row-passed td {
-      background: #d8f6d8;
-      color: #2d582d;
-    }
-
-    .placeholder {
-      margin: 0;
-      font-size: 1rem;
-      letter-spacing: 0.2px;
+      opacity: 0.62;
     }
 
     .error {
+      margin: 0;
       color: var(--error-color);
-      font-size: 1.05rem;
+      font-size: 1rem;
       font-weight: 700;
     }
 
-    @media (max-width: 920px) {
-      .generator-grid {
-        grid-template-columns: 1fr 1fr;
+    @media (max-width: 1180px) {
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .summary-tile.next {
+        grid-column: 1 / -1;
       }
     }
 
-    @media (max-width: 640px) {
-      .generator-grid {
+    @media (max-width: 760px) {
+      .planner-header,
+      .tool-grid,
+      .summary-grid,
+      .input-grid {
         grid-template-columns: 1fr;
+      }
+
+      .planner-header {
+        display: grid;
+      }
+
+      .quick-actions,
+      .quick-actions select {
+        width: 100%;
       }
     }
   `,
