@@ -13,9 +13,19 @@ interface SavedRouteEntry {
   encodedData: string;
 }
 
+interface SavedShipBuild {
+  id: string;
+  name: string;
+  build: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const SAVED_ROUTES_STORAGE_KEY = 'elite-companion-saved-routes';
 const EXACT_PLOTTER_STORAGE_KEY = 'elite-companion-exact-plotter';
+const SAVED_SHIP_BUILDS_STORAGE_KEY = 'elite-companion-ship-builds';
 const MAX_SAVED_ROUTES = 15;
+const MAX_SAVED_SHIP_BUILDS = 25;
 
 @Component({
   selector: 'app-galaxy-route-panel',
@@ -154,11 +164,30 @@ const MAX_SAVED_ROUTES = 15;
         <section class="tool-panel">
           <div class="section-head">
             <h3>Exact Plotter</h3>
-            <button type="button" (click)="saveExactPlotterDraft(snapshot)" [disabled]="uploadingRoute">
-              Save Build
-            </button>
+            <div class="action-row">
+              <button type="button" (click)="openShipBuildModal()" [disabled]="uploadingRoute">
+                New Ship
+              </button>
+              <button type="button" (click)="saveExactPlotterDraft(snapshot)" [disabled]="uploadingRoute">
+                Save Draft
+              </button>
+            </div>
           </div>
           <div class="input-grid">
+            <label>
+              Ship
+              <select
+                [(ngModel)]="selectedShipBuildId"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute || savedShipBuilds.length === 0"
+                (change)="onShipBuildSelected()"
+              >
+                <option value="">{{ savedShipBuilds.length > 0 ? 'Select ship build' : 'No saved ships' }}</option>
+                <option *ngFor="let build of savedShipBuilds" [value]="build.id">
+                  {{ build.name }}
+                </option>
+              </select>
+            </label>
             <label>
               Source
               <input
@@ -216,6 +245,41 @@ const MAX_SAVED_ROUTES = 15;
             {{ uploadingRoute ? 'Generating...' : 'Generate Exact Route' }}
           </button>
         </section>
+      </section>
+
+      <section class="modal-backdrop" *ngIf="showShipBuildModal">
+        <form class="modal" (ngSubmit)="saveShipBuildFromModal()">
+          <div class="section-head">
+            <h3>Create Ship Build</h3>
+            <button type="button" (click)="closeShipBuildModal()">Close</button>
+          </div>
+          <label>
+            Ship Name
+            <input
+              type="text"
+              [(ngModel)]="shipBuildModalName"
+              [ngModelOptions]="{ standalone: true }"
+              placeholder="Exploration Anaconda"
+              autocomplete="off"
+            />
+          </label>
+          <label class="build-label">
+            SLEF / Coriolis Build
+            <textarea
+              rows="12"
+              [(ngModel)]="shipBuildModalValue"
+              [ngModelOptions]="{ standalone: true }"
+              placeholder="Paste SLEF or Coriolis export"
+            ></textarea>
+          </label>
+          <p class="error" *ngIf="shipBuildModalError">{{ shipBuildModalError }}</p>
+          <div class="modal-actions">
+            <button type="submit">Save Ship</button>
+            <button type="button" class="danger" (click)="deleteSelectedShipBuild()" [disabled]="!selectedShipBuildId">
+              Delete Selected
+            </button>
+          </div>
+        </form>
       </section>
 
       <section class="star-table">
@@ -307,6 +371,14 @@ const MAX_SAVED_ROUTES = 15;
       justify-content: space-between;
       gap: 10px;
       flex-wrap: wrap;
+    }
+
+    .action-row,
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
     .quick-actions select {
@@ -445,6 +517,39 @@ const MAX_SAVED_ROUTES = 15;
       min-height: 118px;
     }
 
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(0, 0, 0, 0.58);
+    }
+
+    .modal {
+      width: min(760px, 100%);
+      max-height: min(86vh, 760px);
+      overflow: auto;
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid color-mix(in srgb, var(--panel-border) 70%, transparent);
+      background: var(--panel-bg);
+      color: var(--app-text);
+      box-sizing: border-box;
+    }
+
+    .modal textarea {
+      min-height: 280px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.88rem;
+    }
+
+    .danger {
+      color: var(--error-color);
+    }
+
     .table-wrap {
       max-height: 420px;
       overflow: auto;
@@ -529,6 +634,12 @@ export class GalaxyRoutePanelComponent implements OnInit {
   csvRowSystems: string[] = [];
   savedRoutes: SavedRouteEntry[] = [];
   selectedSavedRouteId = '';
+  savedShipBuilds: SavedShipBuild[] = [];
+  selectedShipBuildId = '';
+  showShipBuildModal = false;
+  shipBuildModalName = '';
+  shipBuildModalValue = '';
+  shipBuildModalError: string | null = null;
   spanshSource = '';
   spanshDestination = '';
   spanshJumpRange = 60;
@@ -543,6 +654,7 @@ export class GalaxyRoutePanelComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadSavedRoutesFromStorage();
+    this.loadShipBuildsFromStorage();
     this.loadExactPlotterDraft();
   }
 
@@ -616,6 +728,75 @@ export class GalaxyRoutePanelComponent implements OnInit {
     this.persistExactPlotterDraft(snapshot);
     this.copyMessage = 'Exact plotter build saved locally.';
     this.routeUploadError = null;
+  }
+
+  onShipBuildSelected(): void {
+    const selected = this.savedShipBuilds.find((build) => build.id === this.selectedShipBuildId);
+    if (!selected) {
+      return;
+    }
+
+    this.exactShipBuild = selected.build;
+    this.copyMessage = `Loaded ship build: ${selected.name}`;
+    this.routeUploadError = null;
+  }
+
+  openShipBuildModal(): void {
+    const selected = this.savedShipBuilds.find((build) => build.id === this.selectedShipBuildId);
+    this.shipBuildModalName = selected?.name ?? '';
+    this.shipBuildModalValue = selected?.build ?? this.exactShipBuild;
+    this.shipBuildModalError = null;
+    this.showShipBuildModal = true;
+  }
+
+  closeShipBuildModal(): void {
+    this.showShipBuildModal = false;
+    this.shipBuildModalError = null;
+  }
+
+  saveShipBuildFromModal(): void {
+    const name = this.shipBuildModalName.trim();
+    const build = this.shipBuildModalValue.trim();
+
+    if (!name) {
+      this.shipBuildModalError = 'Ship name is required.';
+      return;
+    }
+
+    if (!build) {
+      this.shipBuildModalError = 'SLEF/Coriolis build is required.';
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const existing = this.savedShipBuilds.find((entry) => entry.id === this.selectedShipBuildId);
+    const savedBuild: SavedShipBuild = {
+      id: existing?.id ?? this.createShipBuildId(name),
+      name,
+      build,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+
+    const otherBuilds = this.savedShipBuilds.filter((entry) => entry.id !== savedBuild.id);
+    this.savedShipBuilds = [savedBuild, ...otherBuilds].slice(0, MAX_SAVED_SHIP_BUILDS);
+    this.selectedShipBuildId = savedBuild.id;
+    this.exactShipBuild = savedBuild.build;
+    this.persistShipBuilds();
+    this.copyMessage = `Saved ship build: ${savedBuild.name}`;
+    this.closeShipBuildModal();
+  }
+
+  deleteSelectedShipBuild(): void {
+    if (!this.selectedShipBuildId) {
+      return;
+    }
+
+    this.savedShipBuilds = this.savedShipBuilds.filter((entry) => entry.id !== this.selectedShipBuildId);
+    this.selectedShipBuildId = '';
+    this.persistShipBuilds();
+    this.copyMessage = 'Ship build deleted.';
+    this.closeShipBuildModal();
   }
 
   generateExactRoute(snapshot: StateSnapshot): void {
@@ -1033,6 +1214,7 @@ export class GalaxyRoutePanelComponent implements OnInit {
         source?: string;
         destination?: string;
         shipBuild?: string;
+        shipBuildId?: string;
         cargo?: number;
         fuelReserveSize?: number;
       };
@@ -1040,12 +1222,14 @@ export class GalaxyRoutePanelComponent implements OnInit {
       this.exactSource = typeof parsed.source === 'string' ? parsed.source : '';
       this.exactDestination = typeof parsed.destination === 'string' ? parsed.destination : '';
       this.exactShipBuild = typeof parsed.shipBuild === 'string' ? parsed.shipBuild : '';
+      this.selectedShipBuildId = typeof parsed.shipBuildId === 'string' ? parsed.shipBuildId : '';
       this.exactCargo = typeof parsed.cargo === 'number' ? parsed.cargo : 0;
       this.exactFuelReserveSize = typeof parsed.fuelReserveSize === 'number' ? parsed.fuelReserveSize : 0;
     } catch {
       this.exactSource = '';
       this.exactDestination = '';
       this.exactShipBuild = '';
+      this.selectedShipBuildId = '';
       this.exactCargo = 0;
       this.exactFuelReserveSize = 0;
     }
@@ -1065,6 +1249,7 @@ export class GalaxyRoutePanelComponent implements OnInit {
         source,
         destination,
         shipBuild,
+        shipBuildId: this.selectedShipBuildId,
         cargo: this.exactCargo,
         fuelReserveSize: this.exactFuelReserveSize,
       }));
@@ -1087,6 +1272,56 @@ export class GalaxyRoutePanelComponent implements OnInit {
     textArea.select();
     document.execCommand('copy');
     document.body.removeChild(textArea);
+  }
+
+  private loadShipBuildsFromStorage(): void {
+    try {
+      const raw = localStorage.getItem(SAVED_SHIP_BUILDS_STORAGE_KEY);
+      if (!raw) {
+        this.savedShipBuilds = [];
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) {
+        this.savedShipBuilds = [];
+        return;
+      }
+
+      this.savedShipBuilds = parsed
+        .filter((entry): entry is SavedShipBuild => this.isSavedShipBuild(entry))
+        .slice(0, MAX_SAVED_SHIP_BUILDS);
+    } catch {
+      this.savedShipBuilds = [];
+    }
+  }
+
+  private persistShipBuilds(): void {
+    try {
+      localStorage.setItem(SAVED_SHIP_BUILDS_STORAGE_KEY, JSON.stringify(this.savedShipBuilds));
+    } catch {
+      this.routeUploadError = 'Ship build could not be saved locally.';
+    }
+  }
+
+  private isSavedShipBuild(value: unknown): value is SavedShipBuild {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const candidate = value as Partial<SavedShipBuild>;
+    return (
+      typeof candidate.id === 'string' &&
+      typeof candidate.name === 'string' &&
+      typeof candidate.build === 'string' &&
+      typeof candidate.createdAt === 'string' &&
+      typeof candidate.updatedAt === 'string'
+    );
+  }
+
+  private createShipBuildId(name: string): string {
+    const normalized = name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    return `${normalized || 'ship'}-${Date.now()}`;
   }
 
   private loadSavedRoutesFromStorage(): void {

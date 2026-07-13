@@ -6,6 +6,16 @@ import {
 } from '../realtime-state.service';
 import { MissionState, StateSnapshot } from '../state.types';
 
+interface DerivedMissionCommodity {
+  displayName: string;
+  marketName: string;
+  count: number | null;
+}
+
+const LOCALIZED_COMMODITY_MARKET_NAMES: Record<string, string> = {
+  oro: 'gold',
+};
+
 @Component({
   selector: 'app-mission-board-panel',
   standalone: true,
@@ -32,7 +42,7 @@ import { MissionState, StateSnapshot } from '../state.types';
             <p><strong>From:</strong> {{ mission.originSystem ?? '-' }} / {{ mission.originStation ?? '-' }}</p>
             <p><strong>To:</strong> {{ mission.destinationSystem ?? '-' }} / {{ mission.destinationStation ?? '-' }}</p>
             <p><strong>Target:</strong> {{ mission.targetFaction ?? mission.targetType ?? '-' }}</p>
-            <p><strong>Cargo:</strong> {{ mission.commodity ?? '-' }} ({{ mission.commodityCount ?? 0 }})</p>
+            <p><strong>Cargo:</strong> {{ getMissionCargoLabel(mission) }}</p>
             <p><strong>Passengers:</strong> {{ mission.passengerCount ?? 0 }} {{ mission.passengerType ?? '' }}</p>
             <p><strong>Reward:</strong> {{ formatCredits(mission.reward) }}</p>
             <p><strong>Expires:</strong> {{ mission.expiry ? (mission.expiry | date:'medium') : '-' }}</p>
@@ -388,12 +398,17 @@ export class MissionBoardPanelComponent {
 
   searchCommodityForMission(mission: MissionState): void {
     const sourceSystem = mission.originSystem?.trim() || this.snapshot.location.starSystem?.trim() || '';
-    const commodity = mission.commodity?.trim() || this.deriveCommodityFromMissionTitle(mission) || '';
-    const minSupply = mission.commodityCount && mission.commodityCount > 0 ? mission.commodityCount : 1;
+    const derivedCommodity = this.deriveCommodityFromMissionText(mission);
+    const commodity = this.getMarketCommodityName(mission.commodity?.trim() || derivedCommodity?.displayName || '');
+    const minSupply = mission.commodityCount && mission.commodityCount > 0
+      ? mission.commodityCount
+      : derivedCommodity?.count && derivedCommodity.count > 0
+        ? derivedCommodity.count
+        : 1;
 
     if (!sourceSystem || !commodity) {
       this.searchErrors[mission.missionId] =
-        'Missing source system or commodity. Need MissionAccepted/CargoDepot data.';
+        'Missing source system or commodity. Mission title could not be parsed.';
       return;
     }
 
@@ -531,25 +546,69 @@ export class MissionBoardPanelComponent {
     return [...rows.values()].slice(0, 6);
   }
 
-  private deriveCommodityFromMissionTitle(mission: MissionState): string {
+  getMissionCargoLabel(mission: MissionState): string {
+    const derivedCommodity = this.deriveCommodityFromMissionText(mission);
+    const commodity = mission.commodity?.trim() || derivedCommodity?.displayName || '-';
+    const count = mission.commodityCount && mission.commodityCount > 0
+      ? mission.commodityCount
+      : derivedCommodity?.count ?? 0;
+
+    return `${commodity} (${count})`;
+  }
+
+  private deriveCommodityFromMissionText(mission: MissionState): DerivedMissionCommodity | null {
     const title = (mission.localizedName?.trim() || mission.name?.trim() || '').replace(/\s+/g, ' ');
     if (!title) {
-      return '';
+      return null;
     }
 
     const patterns = [
-      /(?:source and return|mine|deliver|acquire)\s+\d+\s+units?\s+of\s+(.+)$/i,
-      /(?:source and return|mine|deliver|acquire)\s+\d+\s+(.+)$/i,
+      /(?:source and return|mine|deliver|acquire)\s+([\d,.]+)\s+units?\s+of\s+(.+)$/i,
+      /(?:source and return|mine|deliver|acquire)\s+([\d,.]+)\s+(.+)$/i,
+      /(?:localiza y trae|localizar y traer|entrega|entregar|compra|comprar|mina|minar)\s+([\d,.]+)\s+unidades?\s+de\s+(.+)$/i,
+      /(?:localiza y trae|localizar y traer|entrega|entregar|compra|comprar|mina|minar)\s+([\d,.]+)\s+(.+)$/i,
     ];
 
     for (const pattern of patterns) {
       const match = title.match(pattern);
-      const commodity = match?.[1]?.trim() || '';
-      if (commodity) {
-        return commodity;
+      const count = this.parseLocalizedInteger(match?.[1] ?? '');
+      const displayName = this.cleanMissionCommodityName(match?.[2] ?? '');
+      if (displayName) {
+        return {
+          displayName,
+          marketName: this.getMarketCommodityName(displayName),
+          count,
+        };
       }
     }
 
-    return '';
+    return null;
+  }
+
+  private getMarketCommodityName(value: string): string {
+    const normalized = value.trim();
+    if (!normalized) {
+      return '';
+    }
+
+    const key = normalized.toLowerCase();
+    return LOCALIZED_COMMODITY_MARKET_NAMES[key] ?? normalized;
+  }
+
+  private cleanMissionCommodityName(value: string): string {
+    return value
+      .trim()
+      .replace(/[.!?]+$/g, '')
+      .replace(/\s+/g, ' ');
+  }
+
+  private parseLocalizedInteger(value: string): number | null {
+    const normalized = value.trim().replace(/[.,\s]/g, '');
+    if (!normalized) {
+      return null;
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 }

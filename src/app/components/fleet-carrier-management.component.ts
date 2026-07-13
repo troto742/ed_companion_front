@@ -2,6 +2,7 @@ import { DecimalPipe, NgFor, NgIf } from '@angular/common';
 import { Component, Input, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
+  CommoditySearchStation,
   RealtimeStateService,
   TradeRecommendation,
   TradeRecommendationsResult,
@@ -24,9 +25,32 @@ interface CarrierProfile {
   tritiumReserve: number;
 }
 
+interface TritiumStopPlan {
+  type: 'buy' | 'mine';
+  systemName: string;
+  stationName: string;
+  tons: number;
+  unitPrice: number | null;
+  distanceLy: number | null;
+  note: string;
+}
+
+interface FcRoutePlan {
+  origin: string;
+  destination: string;
+  estimatedJumps: number;
+  tritiumRequired: number;
+  tritiumReserve: number;
+  tritiumDeficit: number;
+  cargoFreeBeforeBuying: number;
+  stops: TritiumStopPlan[];
+  bestRouteLabel: string;
+}
+
 const CARRIER_STORAGE_KEY = 'elite-companion-fleet-carrier';
 const DEFAULT_CARRIER_CAPACITY = 25000;
 const DEFAULT_CARRIER_JUMP_RANGE = 500;
+const ESTIMATED_TRITIUM_PER_JUMP = 135;
 
 @Component({
   selector: 'app-fleet-carrier-management',
@@ -91,7 +115,12 @@ const DEFAULT_CARRIER_JUMP_RANGE = 500;
         <section class="panel route-panel">
           <div class="section-head">
             <h3>FC Route Planner</h3>
-            <button type="button" (click)="copyRouteSummary()">Copy</button>
+            <div class="button-row">
+              <button type="button" (click)="searchBestFcRoute(snapshot)" [disabled]="loadingRoutePlan">
+                {{ loadingRoutePlan ? 'Searching...' : 'Search' }}
+              </button>
+              <button type="button" (click)="copyRouteSummary()">Copy</button>
+            </div>
           </div>
           <div class="form-grid">
             <label>
@@ -129,6 +158,47 @@ const DEFAULT_CARRIER_JUMP_RANGE = 500;
               tons loaded
             </span>
           </div>
+          <section class="best-route" *ngIf="fcRoutePlan as plan">
+            <div class="best-route-head">
+              <h4>Best Route</h4>
+              <span [class.warning]="plan.tritiumDeficit > 0">
+                {{ plan.tritiumDeficit > 0 ? (plan.tritiumDeficit | number:'1.0-0') + ' tritium missing' : 'Fuel covered' }}
+              </span>
+            </div>
+            <p class="best-route-line">{{ plan.bestRouteLabel }}</p>
+            <div class="route-summary compact-summary">
+              <span>
+                <strong>{{ plan.estimatedJumps }}</strong>
+                jumps
+              </span>
+              <span>
+                <strong>{{ plan.tritiumRequired | number:'1.0-0' }}</strong>
+                required
+              </span>
+              <span>
+                <strong>{{ plan.tritiumReserve | number:'1.0-0' }}</strong>
+                reserve
+              </span>
+              <span>
+                <strong>{{ plan.cargoFreeBeforeBuying | number:'1.0-0' }}</strong>
+                cargo free
+              </span>
+            </div>
+            <div class="plan-stops" *ngIf="plan.stops.length > 0; else directRoute">
+              <article class="plan-stop" *ngFor="let stop of plan.stops">
+                <span class="stop-type">{{ stop.type === 'buy' ? 'Buy Tritium' : 'Mine Tritium' }}</span>
+                <strong>{{ stop.systemName }}</strong>
+                <span>{{ stop.stationName }}</span>
+                <span>{{ stop.tons | number:'1.0-0' }} t</span>
+                <span>{{ stop.unitPrice === null ? '-' : formatCredits(stop.unitPrice) }}</span>
+                <span>{{ stop.distanceLy === null ? 'distance n/a' : (stop.distanceLy | number:'1.0-1') + ' ly' }}</span>
+                <p>{{ stop.note }}</p>
+              </article>
+            </div>
+            <ng-template #directRoute>
+              <p class="placeholder">Reserve is enough for a direct carrier route.</p>
+            </ng-template>
+          </section>
           <p class="helper" *ngIf="routeMessage">{{ routeMessage }}</p>
         </section>
       </section>
@@ -310,6 +380,74 @@ const DEFAULT_CARRIER_JUMP_RANGE = 500;
       font-size: 1.25rem;
     }
 
+    .best-route {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid color-mix(in srgb, var(--panel-border) 42%, transparent);
+      background: var(--table-bg);
+    }
+
+    .best-route-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    h4 {
+      margin: 0;
+      font-size: 0.95rem;
+      text-transform: uppercase;
+    }
+
+    .best-route-head span {
+      font-weight: 700;
+    }
+
+    .warning {
+      color: var(--error-color);
+    }
+
+    .best-route-line {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .compact-summary span {
+      min-width: 96px;
+    }
+
+    .plan-stops {
+      display: grid;
+      gap: 8px;
+    }
+
+    .plan-stop {
+      display: grid;
+      grid-template-columns: 0.8fr 1fr 1.2fr 0.5fr 0.7fr 0.7fr;
+      gap: 8px;
+      align-items: center;
+      padding: 9px;
+      border: 1px solid color-mix(in srgb, var(--panel-border) 30%, transparent);
+    }
+
+    .plan-stop p {
+      grid-column: 1 / -1;
+      margin: 0;
+      opacity: 0.78;
+    }
+
+    .stop-type {
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.78rem;
+    }
+
     .carrier-grid {
       display: grid;
       grid-template-columns: minmax(280px, 0.8fr) minmax(360px, 1.2fr);
@@ -322,6 +460,13 @@ const DEFAULT_CARRIER_JUMP_RANGE = 500;
       justify-content: space-between;
       gap: 10px;
       margin-bottom: 12px;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
     .form-grid {
@@ -459,7 +604,8 @@ const DEFAULT_CARRIER_JUMP_RANGE = 500;
       .form-grid,
       .form-grid.two,
       .trade-form,
-      .trade-card {
+      .trade-card,
+      .plan-stop {
         grid-template-columns: 1fr;
       }
     }
@@ -482,6 +628,8 @@ export class FleetCarrierManagementComponent implements OnInit {
   routeDistanceLy = 0;
   carrierJumpRange = DEFAULT_CARRIER_JUMP_RANGE;
   routeMessage: string | null = null;
+  loadingRoutePlan = false;
+  fcRoutePlan: FcRoutePlan | null = null;
   tradeCommodity = 'tritium';
   tradeMinProfit = 1000;
   tradeMinSupply = 1000;
@@ -554,7 +702,7 @@ export class FleetCarrierManagementComponent implements OnInit {
   }
 
   getTritiumBudget(): number {
-    return this.getEstimatedJumps() * 135;
+    return this.getEstimatedJumps() * ESTIMATED_TRITIUM_PER_JUMP;
   }
 
   getRouteCargoLoad(): number {
@@ -593,6 +741,74 @@ export class FleetCarrierManagementComponent implements OnInit {
     });
   }
 
+  searchBestFcRoute(snapshot: StateSnapshot): void {
+    const origin = this.routeOrigin.trim() || snapshot.location.starSystem?.trim() || '';
+    const destination = this.routeDestination.trim();
+
+    if (!origin || !destination) {
+      this.routeMessage = 'Origin and destination are required to search an FC route.';
+      this.fcRoutePlan = null;
+      return;
+    }
+
+    const estimatedJumps = this.getEstimatedJumps();
+    if (estimatedJumps <= 0) {
+      this.routeMessage = 'Distance LY must be greater than 0 to estimate carrier jumps.';
+      this.fcRoutePlan = null;
+      return;
+    }
+
+    this.routeOrigin = origin;
+    this.loadingRoutePlan = true;
+    this.routeMessage = null;
+
+    this.state.searchCommodityMarkets(origin, 'tritium', 10, 1, DEFAULT_CARRIER_JUMP_RANGE).subscribe({
+      next: (result) => {
+        const stops = this.buildTritiumStops(result.cheapest, estimatedJumps);
+        const tritiumRequired = this.getTritiumBudget();
+        const tritiumReserve = this.toSafeNumber(this.profile.tritiumReserve);
+        const tritiumDeficit = Math.max(0, tritiumRequired - tritiumReserve);
+
+        this.fcRoutePlan = {
+          origin,
+          destination,
+          estimatedJumps,
+          tritiumRequired,
+          tritiumReserve,
+          tritiumDeficit,
+          cargoFreeBeforeBuying: this.getFreeCargo(),
+          stops,
+          bestRouteLabel: this.buildBestRouteLabel(origin, destination, stops),
+        };
+        this.routeMessage = stops.length > 0
+          ? 'Best route calculated with Tritium purchase/mining contingencies.'
+          : 'Best route calculated. Current Tritium reserve covers the trip.';
+        this.loadingRoutePlan = false;
+      },
+      error: () => {
+        const tritiumRequired = this.getTritiumBudget();
+        const tritiumReserve = this.toSafeNumber(this.profile.tritiumReserve);
+        const tritiumDeficit = Math.max(0, tritiumRequired - tritiumReserve);
+        const fallbackStop = this.buildMiningStop(tritiumDeficit);
+        const stops = fallbackStop ? [fallbackStop] : [];
+
+        this.fcRoutePlan = {
+          origin,
+          destination,
+          estimatedJumps,
+          tritiumRequired,
+          tritiumReserve,
+          tritiumDeficit,
+          cargoFreeBeforeBuying: this.getFreeCargo(),
+          stops,
+          bestRouteLabel: this.buildBestRouteLabel(origin, destination, stops),
+        };
+        this.routeMessage = 'Tritium market search failed; route uses mining fallback only.';
+        this.loadingRoutePlan = false;
+      },
+    });
+  }
+
   useTradeAsRoute(row: TradeRecommendation, snapshot: StateSnapshot): void {
     this.routeOrigin = row.origin.systemName || snapshot.location.starSystem || '';
     this.routeDestination = row.destination.systemName || '';
@@ -603,7 +819,12 @@ export class FleetCarrierManagementComponent implements OnInit {
   copyRouteSummary(): void {
     const origin = this.routeOrigin.trim() || 'Unknown origin';
     const destination = this.routeDestination.trim() || 'Unknown destination';
-    const summary = `${origin} -> ${destination}: ${this.getEstimatedJumps()} FC jumps, ~${Math.round(this.getTritiumBudget())} tritium.`;
+    const stopSummary = this.fcRoutePlan?.stops.length
+      ? ` Stops: ${this.fcRoutePlan.stops
+        .map((stop) => `${stop.type}:${stop.systemName} ${Math.round(stop.tons)}t`)
+        .join(', ')}.`
+      : '';
+    const summary = `${origin} -> ${destination}: ${this.getEstimatedJumps()} FC jumps, ~${Math.round(this.getTritiumBudget())} tritium.${stopSummary}`;
     void this.copyToClipboard(summary)
       .then(() => {
         this.routeMessage = 'Route summary copied.';
@@ -667,6 +888,86 @@ export class FleetCarrierManagementComponent implements OnInit {
     } catch {
       this.commodities = [];
     }
+  }
+
+  private buildTritiumStops(markets: CommoditySearchStation[], estimatedJumps: number): TritiumStopPlan[] {
+    const tritiumRequired = estimatedJumps * ESTIMATED_TRITIUM_PER_JUMP;
+    const tritiumReserve = this.toSafeNumber(this.profile.tritiumReserve);
+    let remainingDeficit = Math.max(0, tritiumRequired - tritiumReserve);
+    let remainingCargo = this.getFreeCargo();
+
+    if (remainingDeficit <= 0) {
+      return [];
+    }
+
+    const stops: TritiumStopPlan[] = [];
+    const sortedMarkets = [...markets]
+      .filter((market) => this.toSafeNumber(market.supply) > 0)
+      .sort((left, right) => {
+        const leftPrice = left.price ?? Number.MAX_SAFE_INTEGER;
+        const rightPrice = right.price ?? Number.MAX_SAFE_INTEGER;
+        if (leftPrice !== rightPrice) {
+          return leftPrice - rightPrice;
+        }
+
+        return (left.distanceLy ?? Number.MAX_SAFE_INTEGER) - (right.distanceLy ?? Number.MAX_SAFE_INTEGER);
+      });
+
+    for (const market of sortedMarkets) {
+      if (remainingDeficit <= 0 || remainingCargo <= 0) {
+        break;
+      }
+
+      const available = this.toSafeNumber(market.supply);
+      const tons = Math.min(remainingDeficit, remainingCargo, available);
+      if (tons <= 0) {
+        continue;
+      }
+
+      stops.push({
+        type: 'buy',
+        systemName: market.systemName,
+        stationName: market.stationName,
+        tons,
+        unitPrice: market.price,
+        distanceLy: market.distanceLy,
+        note: 'Prioritized by low Tritium price, available supply and carrier jump range from origin.',
+      });
+
+      remainingDeficit -= tons;
+      remainingCargo -= tons;
+    }
+
+    const miningStop = this.buildMiningStop(remainingDeficit);
+    if (miningStop) {
+      stops.push(miningStop);
+    }
+
+    return stops;
+  }
+
+  private buildMiningStop(tonsNeeded: number): TritiumStopPlan | null {
+    if (tonsNeeded <= 0) {
+      return null;
+    }
+
+    return {
+      type: 'mine',
+      systemName: 'Nearest icy ring / Tritium hotspot',
+      stationName: 'Mining contingency',
+      tons: tonsNeeded,
+      unitPrice: null,
+      distanceLy: null,
+      note: 'Not enough purchasable Tritium was found within the current constraints. Mine before continuing.',
+    };
+  }
+
+  private buildBestRouteLabel(origin: string, destination: string, stops: TritiumStopPlan[]): string {
+    return [
+      origin,
+      ...stops.map((stop) => stop.systemName),
+      destination,
+    ].join(' -> ');
   }
 
   private toSafeNumber(value: number | null | undefined): number {
