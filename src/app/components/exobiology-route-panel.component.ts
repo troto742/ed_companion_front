@@ -501,6 +501,12 @@ export class ExobiologyRoutePanelComponent implements OnInit {
       },
       search: {
         filters: {
+          // Spansh requires at least one native body-search constraint. This is a
+          // deliberately broad radius, not a planet-composition restriction.
+          distance: {
+            min: '0',
+            max: '40000',
+          },
           // These broad planet-level filters reduce the Spansh result set. The backend
           // still verifies the Biological signal specifically and every unique sample.
           signal_count: {
