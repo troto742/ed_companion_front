@@ -29,6 +29,8 @@ export interface SpanshExobiologyBodyCandidate {
   distanceToArrivalLs: number | null;
   subtype: string | null;
   atmosphere: string | null;
+  biologicalSignals: number;
+  samples: Array<{ name: string; value: number }>;
 }
 
 export interface SpanshExobiologySystemCandidate {
@@ -406,13 +408,7 @@ export class RealtimeStateService {
       z?: number;
     };
     search: {
-      filters: {
-        atmosphere: { value: string[] };
-        distance: { min: string | number; max: string | number };
-        gravity: { comparison: string; value: [string | number, string | number] };
-        subtype: { value: string[] };
-        updated_at: { comparison: string; value: [string, string] };
-      };
+      filters: Record<string, unknown>;
       page: number;
       reference_system: string;
       reference_system_details?: {
@@ -426,6 +422,10 @@ export class RealtimeStateService {
       sort: Array<Record<string, unknown>>;
     };
     searchReference?: string;
+    criteria?: {
+      minBiologicalSignals?: number;
+      minSampleValue?: number;
+    };
   }): Observable<SpanshRouteResponse> {
     return this.http.post<SpanshRouteResponse>(`${this.getBackendUrl()}/api/route/spansh/exobiology`, request, {
       headers: {

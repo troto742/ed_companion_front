@@ -7,21 +7,6 @@ import {
 } from '../realtime-state.service';
 import { StateSnapshot } from '../state.types';
 
-const STRATUM_TECTONICA_ATMOSPHERES = [
-  'Hot thin Carbon dioxide',
-  'Hot thin Sulphur dioxide',
-  'Thin Carbon dioxide',
-  'Thin Carbon dioxide-rich',
-  'Thin Sulphur dioxide',
-  'Thin Water',
-  'Thin Water-rich',
-  'Thin Oxygen',
-  'Thin Ammonia',
-  'Thin Ammonia and Oxygen',
-  'Thin Ammonia-rich',
-];
-
-const STRATUM_TECTONICA_SUBTYPES = ['High metal content world'];
 const SAVED_ROUTES_STORAGE_KEY = 'elite-companion-saved-routes';
 const MAX_SAVED_ROUTES = 50;
 
@@ -41,7 +26,7 @@ interface SavedRouteEntry {
   template: `
     <article class="panel compact" *ngIf="snapshot as snapshot">
       <div class="panel-head">
-        <h2>Stratum Tectonica Farm</h2>
+        <h2>High-value Exobiology</h2>
         <p class="powered-by">
           Powered by
           <a href="https://spansh.co.uk" target="_blank" rel="noopener noreferrer">Spansh.co.uk</a>
@@ -54,14 +39,25 @@ interface SavedRouteEntry {
           {{ snapshot.location.starSystem ?? 'Unknown' }}
         </p>
         <p class="meta small">
-          Runs fixed Stratum Tectonica filters and uses your current system as reference_system.
+          Searches all planet types and atmospheres. Only planets whose identified biological samples
+          all meet the selected value are included.
         </p>
+        <div class="filters-grid">
+          <label>
+            <span>Min. biological signals</span>
+            <input type="number" min="1" max="20" step="1" [(ngModel)]="minBiologicalSignals" [disabled]="importingRoute" />
+          </label>
+          <label>
+            <span>Min. value per sample (M CR)</span>
+            <input type="number" min="0" step="1" [(ngModel)]="minSampleValueMillions" [disabled]="importingRoute" />
+          </label>
+        </div>
         <button
           type="button"
-          (click)="searchStratumTectonicaFarm(snapshot)"
+          (click)="searchHighValueExobiology(snapshot)"
           [disabled]="importingRoute || !snapshot.location.starSystem"
         >
-          {{ importingRoute ? 'Searching...' : 'Search Stratum Tectonica Farm' }}
+          {{ importingRoute ? 'Searching...' : 'Search High-value Planets' }}
         </button>
       </section>
 
@@ -146,6 +142,8 @@ interface SavedRouteEntry {
                 <tr>
                   <th>Planet</th>
                   <th>LS</th>
+                  <th>Bio signals</th>
+                  <th>Samples (value)</th>
                   <th>Subtype</th>
                   <th>Atmosphere</th>
                 </tr>
@@ -154,6 +152,12 @@ interface SavedRouteEntry {
                 <tr *ngFor="let body of system.bodies">
                   <td>{{ body.bodyName }}</td>
                   <td>{{ formatLs(body.distanceToArrivalLs) }}</td>
+                  <td>{{ body.biologicalSignals }}</td>
+                  <td>
+                    <span *ngFor="let sample of body.samples; let last = last">
+                      {{ sample.name }} ({{ formatCredits(sample.value) }})<span *ngIf="!last">, </span>
+                    </span>
+                  </td>
                   <td>{{ body.subtype ?? '-' }}</td>
                   <td>{{ body.atmosphere ?? '-' }}</td>
                 </tr>
@@ -388,6 +392,8 @@ export class ExobiologyRoutePanelComponent implements OnInit {
   lastReferenceSystem = '';
   savedRoutes: SavedRouteEntry[] = [];
   selectedSavedRouteId = '';
+  minBiologicalSignals = 3;
+  minSampleValueMillions = 10;
 
   private readonly state = inject(RealtimeStateService);
 
@@ -472,7 +478,7 @@ export class ExobiologyRoutePanelComponent implements OnInit {
       });
   }
 
-  searchStratumTectonicaFarm(snapshot: StateSnapshot): void {
+  searchHighValueExobiology(snapshot: StateSnapshot): void {
     const referenceSystem = snapshot.location.starSystem?.trim() ?? '';
     if (!referenceSystem) {
       this.routeImportError = 'Current system is required. Sync location first.';
@@ -489,25 +495,21 @@ export class ExobiologyRoutePanelComponent implements OnInit {
     this.lastReferenceSystem = referenceSystem;
 
     this.state.importSpanshExobiologyRoute({
+      criteria: {
+        minBiologicalSignals: Math.max(1, Math.trunc(Number(this.minBiologicalSignals) || 3)),
+        minSampleValue: Math.max(0, Number(this.minSampleValueMillions) || 0) * 1_000_000,
+      },
       search: {
         filters: {
-          atmosphere: {
-            value: STRATUM_TECTONICA_ATMOSPHERES,
+          // These broad planet-level filters reduce the Spansh result set. The backend
+          // still verifies the Biological signal specifically and every unique sample.
+          signal_count: {
+            comparison: '>=',
+            value: Math.max(1, Math.trunc(Number(this.minBiologicalSignals) || 3)),
           },
-          distance: {
-            min: '0',
-            max: '40000',
-          },
-          gravity: {
-            comparison: '<=>',
-            value: ['0.00', 0.27],
-          },
-          subtype: {
-            value: STRATUM_TECTONICA_SUBTYPES,
-          },
-          updated_at: {
-            comparison: '<=>',
-            value: ['2016-11-06T15:17:20.000Z', '2021-04-02T04:22:19.310Z'],
+          landmark_value: {
+            comparison: '>=',
+            value: Math.max(0, Number(this.minSampleValueMillions) || 0) * 1_000_000,
           },
         },
         page: 0,
@@ -531,7 +533,7 @@ export class ExobiologyRoutePanelComponent implements OnInit {
       error: (error: unknown) => {
         const apiError = (error as { error?: { error?: unknown } })?.error?.error;
         this.routeImportError =
-          typeof apiError === 'string' ? apiError : 'No se pudo importar la ruta de Stratum Tectonica.';
+          typeof apiError === 'string' ? apiError : 'No se pudo importar la ruta de exobiología rentable.';
         this.importingRoute = false;
       },
     });
@@ -550,8 +552,8 @@ export class ExobiologyRoutePanelComponent implements OnInit {
     const initialSystem =
       this.lastReferenceSystem.trim() ||
       snapshot.location.starSystem?.trim() ||
-      'stratum-tectonica';
-    const routeName = `${initialSystem} Stratum Tectonica`;
+      'exobiology';
+    const routeName = `${initialSystem} High-value Exobiology`;
     const routeFile = this.buildFilteredRouteCsvFile(routeName, this.filteredCurrentRouteSystems);
 
     this.importingRoute = true;
@@ -629,6 +631,10 @@ export class ExobiologyRoutePanelComponent implements OnInit {
     return `${Math.round(value).toLocaleString()} LS`;
   }
 
+  formatCredits(value: number): string {
+    return `${(value / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 2 })} M CR`;
+  }
+
   private parseMaxFilter(value: string): number | null {
     const normalized = value.trim();
     if (!normalized) {
@@ -694,7 +700,7 @@ export class ExobiologyRoutePanelComponent implements OnInit {
     routeName: string,
     systems: SpanshExobiologySystemCandidate[]
   ): File {
-    const safeFileName = routeName.replace(/[\\/:*?"<>|]/g, '-').trim() || 'stratum-tectonica-route';
+    const safeFileName = routeName.replace(/[\\/:*?"<>|]/g, '-').trim() || 'high-value-exobiology-route';
     const csvLines = [
       ['systemName', 'distance', 'distanceRemaining', 'estimatedJumps', 'refuel', 'neutronStar'].join(','),
       ...systems.map((system, index) => [

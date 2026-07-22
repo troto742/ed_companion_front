@@ -106,73 +106,96 @@ const MAX_SAVED_SHIP_BUILDS = 25;
       <p class="error" *ngIf="routeUploadError">{{ routeUploadError }}</p>
 
       <section class="tool-grid">
-        <section class="tool-panel">
+        <section class="tool-panel" [class.collapsed]="spanshCollapsed">
           <div class="section-head">
             <h3>Fast Spansh Route</h3>
-            <a href="https://spansh.co.uk" target="_blank" rel="noopener noreferrer">Spansh</a>
-          </div>
-          <div class="input-grid">
-            <label>
-              Source
-              <input
-                type="text"
-                [(ngModel)]="spanshSource"
-                [ngModelOptions]="{ standalone: true }"
-                [disabled]="uploadingRoute"
-                placeholder="Current system"
-              />
-            </label>
-            <label>
-              Destination
-              <input
-                type="text"
-                [(ngModel)]="spanshDestination"
-                [ngModelOptions]="{ standalone: true }"
-                [disabled]="uploadingRoute"
-                placeholder="Colonia"
-              />
-            </label>
-            <label>
-              Jump Range
-              <input
-                type="number"
-                min="1"
-                step="0.1"
-                [(ngModel)]="spanshJumpRange"
-                [ngModelOptions]="{ standalone: true }"
-                [disabled]="uploadingRoute"
-              />
-            </label>
-            <label>
-              Efficiency
-              <input
-                type="number"
-                min="1"
-                max="100"
-                step="1"
-                [(ngModel)]="spanshEfficiency"
-                [ngModelOptions]="{ standalone: true }"
-                [disabled]="uploadingRoute"
-              />
-            </label>
-          </div>
-          <button type="button" (click)="generateSpanshRoute(snapshot)" [disabled]="uploadingRoute">
-            {{ uploadingRoute ? 'Generating...' : 'Generate Route' }}
-          </button>
-        </section>
-
-        <section class="tool-panel">
-          <div class="section-head">
-            <h3>Exact Plotter</h3>
             <div class="action-row">
-              <button type="button" (click)="openShipBuildModal()" [disabled]="uploadingRoute">
-                New Ship
-              </button>
-              <button type="button" (click)="saveExactPlotterDraft(snapshot)" [disabled]="uploadingRoute">
-                Save Draft
+              <a href="https://spansh.co.uk" target="_blank" rel="noopener noreferrer">Spansh</a>
+              <button
+                type="button"
+                class="collapse-toggle"
+                (click)="spanshCollapsed = !spanshCollapsed"
+                [attr.aria-expanded]="!spanshCollapsed"
+                aria-controls="fast-spansh-content"
+              >
+                {{ spanshCollapsed ? 'Show' : 'Hide' }}
               </button>
             </div>
           </div>
+          <div id="fast-spansh-content" class="tool-content" *ngIf="!spanshCollapsed">
+            <div class="input-grid">
+              <label>
+                Source
+                <input
+                  type="text"
+                  [(ngModel)]="spanshSource"
+                  [ngModelOptions]="{ standalone: true }"
+                  [disabled]="uploadingRoute"
+                  placeholder="Current system"
+                />
+              </label>
+              <label>
+                Destination
+                <input
+                  type="text"
+                  [(ngModel)]="spanshDestination"
+                  [ngModelOptions]="{ standalone: true }"
+                  [disabled]="uploadingRoute"
+                  placeholder="Colonia"
+                />
+              </label>
+              <label>
+                Jump Range
+                <input
+                  type="number"
+                  min="1"
+                  step="0.1"
+                  [(ngModel)]="spanshJumpRange"
+                  [ngModelOptions]="{ standalone: true }"
+                  [disabled]="uploadingRoute"
+                />
+              </label>
+              <label>
+                Efficiency
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="1"
+                  [(ngModel)]="spanshEfficiency"
+                  [ngModelOptions]="{ standalone: true }"
+                  [disabled]="uploadingRoute"
+                />
+              </label>
+            </div>
+            <button type="button" (click)="generateSpanshRoute(snapshot)" [disabled]="uploadingRoute">
+              {{ uploadingRoute ? 'Generating...' : 'Generate Route' }}
+            </button>
+          </div>
+        </section>
+
+        <section class="tool-panel" [class.collapsed]="exactPlotterCollapsed">
+          <div class="section-head">
+            <h3>Exact Plotter</h3>
+            <div class="action-row">
+              <button *ngIf="!exactPlotterCollapsed" type="button" (click)="openShipBuildModal()" [disabled]="uploadingRoute">
+                New Ship
+              </button>
+              <button *ngIf="!exactPlotterCollapsed" type="button" (click)="saveExactPlotterDraft(snapshot)" [disabled]="uploadingRoute">
+                Save Draft
+              </button>
+              <button
+                type="button"
+                class="collapse-toggle"
+                (click)="exactPlotterCollapsed = !exactPlotterCollapsed"
+                [attr.aria-expanded]="!exactPlotterCollapsed"
+                aria-controls="exact-plotter-content"
+              >
+                {{ exactPlotterCollapsed ? 'Show' : 'Hide' }}
+              </button>
+            </div>
+          </div>
+          <div id="exact-plotter-content" class="tool-content" *ngIf="!exactPlotterCollapsed">
           <div class="input-grid">
             <label>
               Ship
@@ -244,6 +267,7 @@ const MAX_SAVED_SHIP_BUILDS = 25;
           <button type="button" (click)="generateExactRoute(snapshot)" [disabled]="uploadingRoute">
             {{ uploadingRoute ? 'Generating...' : 'Generate Exact Route' }}
           </button>
+          </div>
         </section>
       </section>
 
@@ -323,6 +347,19 @@ const MAX_SAVED_SHIP_BUILDS = 25;
       border: 1px solid color-mix(in srgb, var(--panel-border) 55%, transparent);
       background: color-mix(in srgb, var(--panel-bg) 96%, #ffffff 4%);
       box-sizing: border-box;
+    }
+
+    .tool-panel.collapsed {
+      align-content: start;
+    }
+
+    .tool-content {
+      display: grid;
+      gap: 12px;
+    }
+
+    .collapse-toggle {
+      min-width: 64px;
     }
 
     .planner-header {
@@ -649,6 +686,8 @@ export class GalaxyRoutePanelComponent implements OnInit {
   exactShipBuild = '';
   exactCargo = 0;
   exactFuelReserveSize = 0;
+  spanshCollapsed = false;
+  exactPlotterCollapsed = false;
 
   private readonly state = inject(RealtimeStateService);
 
