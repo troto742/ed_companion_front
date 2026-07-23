@@ -410,7 +410,12 @@ export class RealtimeStateService {
     search: {
       filters: Record<string, unknown>;
       page: number;
-      reference_system: string;
+      reference_system?: string;
+      reference_coords?: {
+        x: number;
+        y: number;
+        z: number;
+      };
       reference_system_details?: {
         id64?: number | string;
         name: string;

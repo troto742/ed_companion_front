@@ -480,6 +480,7 @@ export class ExobiologyRoutePanelComponent implements OnInit {
 
   searchHighValueExobiology(snapshot: StateSnapshot): void {
     const referenceSystem = snapshot.location.starSystem?.trim() ?? '';
+    const starPos = snapshot.location.starPos;
     if (!referenceSystem) {
       this.routeImportError = 'Current system is required. Sync location first.';
       this.importSuccessMessage = null;
@@ -495,6 +496,13 @@ export class ExobiologyRoutePanelComponent implements OnInit {
     this.lastReferenceSystem = referenceSystem;
 
     this.state.importSpanshExobiologyRoute({
+      reference: starPos ? {
+        id64: snapshot.location.systemAddress ?? undefined,
+        name: referenceSystem,
+        x: starPos.x,
+        y: starPos.y,
+        z: starPos.z,
+      } : undefined,
       criteria: {
         minBiologicalSignals: Math.max(1, Math.trunc(Number(this.minBiologicalSignals) || 3)),
         minSampleValue: Math.max(0, Number(this.minSampleValueMillions) || 0) * 1_000_000,
@@ -519,7 +527,14 @@ export class ExobiologyRoutePanelComponent implements OnInit {
           },
         },
         page: 0,
-        reference_system: referenceSystem,
+        // Spansh rejects unknown procedural names as reference_system. Journal
+        // coordinates work even when that system is not yet present in its database.
+        reference_system: starPos ? undefined : referenceSystem,
+        reference_coords: starPos ? {
+          x: starPos.x,
+          y: starPos.y,
+          z: starPos.z,
+        } : undefined,
         size: 30,
         sort: [
           {
