@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, signal } from '@angular/core';
 import { Observable } from 'rxjs';
 import { io, Socket } from 'socket.io-client';
-import { StateSnapshot } from './state.types';
+import { MissionState, StateSnapshot } from './state.types';
 
 const DEFAULT_BACKEND_URL = '';
 const BACKEND_URL_STORAGE_KEY = 'elite-backend-url';
@@ -24,11 +24,28 @@ export interface SpanshRoutePreviewRow {
   neutronStar: boolean;
 }
 
+export interface SpanshExobiologyBodyCandidate {
+  bodyName: string;
+  distanceToArrivalLs: number | null;
+  subtype: string | null;
+  atmosphere: string | null;
+  biologicalSignals: number;
+  samples: Array<{ name: string; value: number }>;
+}
+
+export interface SpanshExobiologySystemCandidate {
+  systemName: string;
+  distanceLy: number | null;
+  nearestBodyLs: number | null;
+  bodies: SpanshExobiologyBodyCandidate[];
+}
+
 interface SpanshRouteResponse {
   routeLoaded: boolean;
   routeName: string;
   legs: number;
   previewRows: SpanshRoutePreviewRow[];
+  exobiologySystems?: SpanshExobiologySystemCandidate[];
 }
 
 export interface CommoditySearchStation {
@@ -45,6 +62,7 @@ export interface CommoditySearchStation {
 export interface CommoditySearchResult {
   sourceSystem: string;
   commodity: string;
+  best?: CommoditySearchStation[];
   cheapest: CommoditySearchStation[];
   nearest: CommoditySearchStation[];
 }
@@ -85,6 +103,65 @@ export interface TradeRecommendationsResult {
     maxDaysAgo: number;
   };
   recommendations: TradeRecommendation[];
+}
+
+export type FriendRelationshipStatus =
+  | 'none'
+  | 'pending_sent'
+  | 'pending_received'
+  | 'accepted'
+  | 'self';
+
+export interface FriendSummary {
+  tenantId: string;
+  tenantLabel: string;
+  keyFingerprint: string;
+  lastSeenAt: string;
+  activeStatus: 'online' | 'recent' | 'inactive';
+  relationshipStatus: FriendRelationshipStatus;
+  ship: {
+    shipType: string | null;
+    shipName: string | null;
+    shipIdent: string | null;
+    fuel: StateSnapshot['ship']['fuel'];
+    fuelCapacityMain: number | null;
+    cargo: number | null;
+    hull: number | null;
+    shields: number | null;
+    updatedAt: string | null;
+  };
+  location: {
+    starSystem: string | null;
+    bodyName: string | null;
+    stationName: string | null;
+    docked: boolean;
+    supercruise: boolean;
+    updatedAt: string | null;
+  };
+  missions: {
+    active: MissionState[];
+    updatedAt: string | null;
+  };
+}
+
+export interface FriendRequestSummary {
+  id: string;
+  fromTenantId: string;
+  fromTenantLabel: string;
+  toTenantId: string;
+  toTenantLabel: string;
+  status: 'pending' | 'accepted';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FriendsDashboard {
+  generatedAt: string;
+  activeWindowDays: number;
+  users: FriendSummary[];
+  friends: FriendSummary[];
+  pendingIncoming: FriendRequestSummary[];
+  pendingOutgoing: FriendRequestSummary[];
 }
 
 export interface AdminCreateKeyResponse {
@@ -322,6 +399,46 @@ export class RealtimeStateService {
     });
   }
 
+  importSpanshExobiologyRoute(request: {
+    reference?: {
+      id64?: number | string;
+      name?: string;
+      x?: number;
+      y?: number;
+      z?: number;
+    };
+    search: {
+      filters: Record<string, unknown>;
+      page: number;
+      reference_system?: string;
+      reference_coords?: {
+        x: number;
+        y: number;
+        z: number;
+      };
+      reference_system_details?: {
+        id64?: number | string;
+        name: string;
+        x: number;
+        y: number;
+        z: number;
+      };
+      size: number;
+      sort: Array<Record<string, unknown>>;
+    };
+    searchReference?: string;
+    criteria?: {
+      minBiologicalSignals?: number;
+      minSampleValue?: number;
+    };
+  }): Observable<SpanshRouteResponse> {
+    return this.http.post<SpanshRouteResponse>(`${this.getBackendUrl()}/api/route/spansh/exobiology`, request, {
+      headers: {
+        'x-api-key': this.getApiKey(),
+      },
+    });
+  }
+
   createApiKey(label: string, adminKey: string, apiKey?: string): Observable<AdminCreateKeyResponse> {
     const body: { label: string; apiKey?: string } = { label: label.trim() };
     const customApiKey = apiKey?.trim();
@@ -419,6 +536,38 @@ export class RealtimeStateService {
 
     return this.http.get<TradeRecommendationsResult>(
       `${this.getBackendUrl()}/api/trade/recommendations?${params.toString()}`,
+      {
+        headers: {
+          'x-api-key': this.getApiKey(),
+        },
+      },
+    );
+  }
+
+  getFriendsDashboard(): Observable<FriendsDashboard> {
+    return this.http.get<FriendsDashboard>(`${this.getBackendUrl()}/api/friends`, {
+      headers: {
+        'x-api-key': this.getApiKey(),
+      },
+    });
+  }
+
+  sendFriendRequest(targetTenantId: string): Observable<FriendRequestSummary> {
+    return this.http.post<FriendRequestSummary>(
+      `${this.getBackendUrl()}/api/friends/requests`,
+      { targetTenantId },
+      {
+        headers: {
+          'x-api-key': this.getApiKey(),
+        },
+      },
+    );
+  }
+
+  acceptFriendRequest(fromTenantId: string): Observable<FriendRequestSummary> {
+    return this.http.post<FriendRequestSummary>(
+      `${this.getBackendUrl()}/api/friends/requests/accept`,
+      { fromTenantId },
       {
         headers: {
           'x-api-key': this.getApiKey(),

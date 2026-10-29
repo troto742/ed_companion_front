@@ -3,6 +3,9 @@ import { NgIf } from '@angular/common';
 import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { AppHeaderComponent, AppSection } from './components/app-header.component';
 import { ColonizationPanelComponent } from './components/colonization-panel.component';
+import { ExobiologyRoutePanelComponent } from './components/exobiology-route-panel.component';
+import { FleetCarrierManagementComponent } from './components/fleet-carrier-management.component';
+import { FriendsPanelComponent } from './components/friends-panel.component';
 import { GalaxyRoutePanelComponent } from './components/galaxy-route-panel.component';
 import { LocationPanelComponent } from './components/location-panel.component';
 import { MissionBoardPanelComponent } from './components/mission-board-panel.component';
@@ -19,7 +22,10 @@ import { RealtimeStateService } from './realtime-state.service';
     AppHeaderComponent,
     ShipStatusPanelComponent,
     LocationPanelComponent,
+    FleetCarrierManagementComponent,
+    FriendsPanelComponent,
     GalaxyRoutePanelComponent,
+    ExobiologyRoutePanelComponent,
     MissionBoardPanelComponent,
     ColonizationPanelComponent,
     TradeRecommendationsPanelComponent,
@@ -69,6 +75,18 @@ import { RealtimeStateService } from './realtime-state.service';
 
         <section class="mission-layout" *ngIf="activeSection === 'mission-board'">
           <app-mission-board-panel [snapshot]="snapshot" />
+        </section>
+
+        <section class="mission-layout" *ngIf="activeSection === 'friends'">
+          <app-friends-panel />
+        </section>
+
+        <section class="mission-layout" *ngIf="activeSection === 'fleet-carrier'">
+          <app-fleet-carrier-management [snapshot]="snapshot" />
+        </section>
+
+        <section class="mission-layout" *ngIf="activeSection === 'exobiology-routes'">
+          <app-exobiology-route-panel [snapshot]="snapshot" />
         </section>
 
         <section class="mission-layout" *ngIf="activeSection === 'colonization'">

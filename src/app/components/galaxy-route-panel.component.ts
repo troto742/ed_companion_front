@@ -13,19 +13,36 @@ interface SavedRouteEntry {
   encodedData: string;
 }
 
+interface SavedShipBuild {
+  id: string;
+  name: string;
+  build: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const SAVED_ROUTES_STORAGE_KEY = 'elite-companion-saved-routes';
 const EXACT_PLOTTER_STORAGE_KEY = 'elite-companion-exact-plotter';
+const SAVED_SHIP_BUILDS_STORAGE_KEY = 'elite-companion-ship-builds';
 const MAX_SAVED_ROUTES = 15;
+const MAX_SAVED_SHIP_BUILDS = 25;
 
 @Component({
   selector: 'app-galaxy-route-panel',
   standalone: true,
   imports: [NgIf, NgFor, NgClass, FormsModule],
   template: `
-    <article class="panel compact" *ngIf="snapshot as snapshot">
-      <div class="route-head">
-        <h2>Galaxy Route</h2>
-        <div class="route-actions">
+    <article class="route-planner" *ngIf="snapshot as snapshot">
+      <header class="planner-header">
+        <section>
+          <p class="eyebrow">System Route Planner</p>
+          <h2>{{ snapshot.route.routeName || 'No route loaded' }}</h2>
+          <p class="meta">
+            {{ snapshot.location.starSystem || 'Unknown system' }}
+            <span> / {{ getRouteMatchLabel(snapshot) }}</span>
+          </p>
+        </section>
+        <section class="quick-actions">
           <select
             [disabled]="uploadingRoute || savedRoutes.length === 0"
             (change)="onSavedRouteSelected($event)"
@@ -39,9 +56,9 @@ const MAX_SAVED_ROUTES = 15;
             </option>
           </select>
           <button type="button" (click)="routeInput.click()" [disabled]="uploadingRoute">
-            {{ uploadingRoute ? 'Uploading...' : 'Upload CSV' }}
+            {{ uploadingRoute ? 'Working...' : 'Upload Route' }}
           </button>
-        </div>
+        </section>
         <input
           #routeInput
           type="file"
@@ -49,164 +66,251 @@ const MAX_SAVED_ROUTES = 15;
           (change)="onRouteFileSelected($event)"
           hidden
         />
-      </div>
+      </header>
 
-      <section class="spansh-generator">
-        <p class="powered-by">
-          Powered by
-          <a href="https://spansh.co.uk" target="_blank" rel="noopener noreferrer">Spansh.co.uk</a>
-        </p>
-        <div class="generator-grid">
-          <label>
-            <span>Source</span>
-            <input
-              type="text"
-              [(ngModel)]="spanshSource"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-              placeholder="Current system"
-            />
-          </label>
-          <label>
-            <span>Destination</span>
-            <input
-              type="text"
-              [(ngModel)]="spanshDestination"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-              placeholder="Colonia"
-            />
-          </label>
-          <label>
-            <span>Jump Range</span>
-            <input
-              type="number"
-              min="1"
-              step="0.1"
-              [(ngModel)]="spanshJumpRange"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-            />
-          </label>
-          <label>
-            <span>Efficiency</span>
-            <input
-              type="number"
-              min="1"
-              max="100"
-              step="1"
-              [(ngModel)]="spanshEfficiency"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-            />
-          </label>
-        </div>
-        <button type="button" (click)="generateSpanshRoute(snapshot)" [disabled]="uploadingRoute">
-          {{ uploadingRoute ? 'Generating...' : 'Generate via Spansh' }}
-        </button>
+      <section class="summary-grid">
+        <article class="summary-tile next">
+          <span class="label">Next Star</span>
+          <strong>{{ snapshot.route.nextLeg?.systemName ?? '------' }}</strong>
+          <button
+            type="button"
+            class="copy-btn"
+            (click)="copyNextStar(snapshot)"
+            [disabled]="!snapshot.route.nextLeg?.systemName"
+          >
+            Copy
+          </button>
+        </article>
+        <article class="summary-tile">
+          <span class="label">Progress</span>
+          <strong>{{ formatPercent(getRouteProgress(snapshot)) }}</strong>
+          <div class="meter">
+            <span [style.width.%]="getRouteProgress(snapshot)"></span>
+          </div>
+        </article>
+        <article class="summary-tile">
+          <span class="label">Jumps Left</span>
+          <strong>{{ formatJumpsLeft(getJumpsLeft(snapshot)) }}</strong>
+        </article>
+        <article class="summary-tile">
+          <span class="label">Remaining</span>
+          <strong>{{ formatLy(getRemainingLy(snapshot)) }}</strong>
+        </article>
+        <article class="summary-tile">
+          <span class="label">Star Status</span>
+          <strong>{{ getStarStatus(snapshot) }}</strong>
+        </article>
       </section>
 
-      <section class="exact-plotter-assist">
-        <h3>Exact Plotter Assist</h3>
-        <p class="helper-copy">Paste a SLEF/Coriolis ship build to generate an exact route here.</p>
-        <div class="generator-grid">
-          <label>
-            <span>Source</span>
-            <input
-              type="text"
-              [(ngModel)]="exactSource"
+      <p class="feedback" *ngIf="copyMessage">{{ copyMessage }}</p>
+      <p class="error" *ngIf="routeUploadError">{{ routeUploadError }}</p>
+
+      <section class="tool-grid">
+        <section class="tool-panel" [class.collapsed]="spanshCollapsed">
+          <div class="section-head">
+            <h3>Fast Spansh Route</h3>
+            <div class="action-row">
+              <a href="https://spansh.co.uk" target="_blank" rel="noopener noreferrer">Spansh</a>
+              <button
+                type="button"
+                class="collapse-toggle"
+                (click)="spanshCollapsed = !spanshCollapsed"
+                [attr.aria-expanded]="!spanshCollapsed"
+                aria-controls="fast-spansh-content"
+              >
+                {{ spanshCollapsed ? 'Show' : 'Hide' }}
+              </button>
+            </div>
+          </div>
+          <div id="fast-spansh-content" class="tool-content" *ngIf="!spanshCollapsed">
+            <div class="input-grid">
+              <label>
+                Source
+                <input
+                  type="text"
+                  [(ngModel)]="spanshSource"
+                  [ngModelOptions]="{ standalone: true }"
+                  [disabled]="uploadingRoute"
+                  placeholder="Current system"
+                />
+              </label>
+              <label>
+                Destination
+                <input
+                  type="text"
+                  [(ngModel)]="spanshDestination"
+                  [ngModelOptions]="{ standalone: true }"
+                  [disabled]="uploadingRoute"
+                  placeholder="Colonia"
+                />
+              </label>
+              <label>
+                Jump Range
+                <input
+                  type="number"
+                  min="1"
+                  step="0.1"
+                  [(ngModel)]="spanshJumpRange"
+                  [ngModelOptions]="{ standalone: true }"
+                  [disabled]="uploadingRoute"
+                />
+              </label>
+              <label>
+                Efficiency
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="1"
+                  [(ngModel)]="spanshEfficiency"
+                  [ngModelOptions]="{ standalone: true }"
+                  [disabled]="uploadingRoute"
+                />
+              </label>
+            </div>
+            <button type="button" (click)="generateSpanshRoute(snapshot)" [disabled]="uploadingRoute">
+              {{ uploadingRoute ? 'Generating...' : 'Generate Route' }}
+            </button>
+          </div>
+        </section>
+
+        <section class="tool-panel" [class.collapsed]="exactPlotterCollapsed">
+          <div class="section-head">
+            <h3>Exact Plotter</h3>
+            <div class="action-row">
+              <button *ngIf="!exactPlotterCollapsed" type="button" (click)="openShipBuildModal()" [disabled]="uploadingRoute">
+                New Ship
+              </button>
+              <button *ngIf="!exactPlotterCollapsed" type="button" (click)="saveExactPlotterDraft(snapshot)" [disabled]="uploadingRoute">
+                Save Draft
+              </button>
+              <button
+                type="button"
+                class="collapse-toggle"
+                (click)="exactPlotterCollapsed = !exactPlotterCollapsed"
+                [attr.aria-expanded]="!exactPlotterCollapsed"
+                aria-controls="exact-plotter-content"
+              >
+                {{ exactPlotterCollapsed ? 'Show' : 'Hide' }}
+              </button>
+            </div>
+          </div>
+          <div id="exact-plotter-content" class="tool-content" *ngIf="!exactPlotterCollapsed">
+          <div class="input-grid">
+            <label>
+              Ship
+              <select
+                [(ngModel)]="selectedShipBuildId"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute || savedShipBuilds.length === 0"
+                (change)="onShipBuildSelected()"
+              >
+                <option value="">{{ savedShipBuilds.length > 0 ? 'Select ship build' : 'No saved ships' }}</option>
+                <option *ngFor="let build of savedShipBuilds" [value]="build.id">
+                  {{ build.name }}
+                </option>
+              </select>
+            </label>
+            <label>
+              Source
+              <input
+                type="text"
+                [(ngModel)]="exactSource"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute"
+                placeholder="Current system"
+              />
+            </label>
+            <label>
+              Destination
+              <input
+                type="text"
+                [(ngModel)]="exactDestination"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute"
+                placeholder="Colonia"
+              />
+            </label>
+            <label>
+              Cargo
+              <input
+                type="number"
+                min="0"
+                step="1"
+                [(ngModel)]="exactCargo"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute"
+              />
+            </label>
+            <label>
+              Reserve Fuel
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                [(ngModel)]="exactFuelReserveSize"
+                [ngModelOptions]="{ standalone: true }"
+                [disabled]="uploadingRoute"
+              />
+            </label>
+          </div>
+          <label class="build-label">
+            Ship Build
+            <textarea
+              rows="5"
+              [(ngModel)]="exactShipBuild"
               [ngModelOptions]="{ standalone: true }"
               [disabled]="uploadingRoute"
-              placeholder="Current system"
-            />
+              placeholder="Paste SLEF or Coriolis export"
+            ></textarea>
           </label>
-          <label>
-            <span>Destination</span>
-            <input
-              type="text"
-              [(ngModel)]="exactDestination"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-              placeholder="Colonia"
-            />
-          </label>
-          <label>
-            <span>Cargo</span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              [(ngModel)]="exactCargo"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-            />
-          </label>
-          <label>
-            <span>Reserve Fuel</span>
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              [(ngModel)]="exactFuelReserveSize"
-              [ngModelOptions]="{ standalone: true }"
-              [disabled]="uploadingRoute"
-            />
-          </label>
-        </div>
-        <label class="build-label">
-          <span>Ship Build</span>
-          <textarea
-            rows="6"
-            [(ngModel)]="exactShipBuild"
-            [ngModelOptions]="{ standalone: true }"
-            [disabled]="uploadingRoute"
-            placeholder="Paste the SLEF or Coriolis ship export here"
-          ></textarea>
-        </label>
-        <div class="exact-actions">
-          <button type="button" (click)="saveExactPlotterDraft(snapshot)" [disabled]="uploadingRoute">
-            Save Build
-          </button>
           <button type="button" (click)="generateExactRoute(snapshot)" [disabled]="uploadingRoute">
             {{ uploadingRoute ? 'Generating...' : 'Generate Exact Route' }}
           </button>
-        </div>
+          </div>
+        </section>
       </section>
 
-      <p class="meta progress-line">
-        <span>Progress: {{ formatPercent(getRouteProgress(snapshot)) }}</span>
-        <span>Jumps left: {{ formatJumpsLeft(getJumpsLeft(snapshot)) }}</span>
-        <span>Star status: {{ getStarStatus(snapshot) }}</span>
-      </p>
-      <div class="meter route-meter">
-        <div class="fill" [style.width.%]="getRouteProgress(snapshot)"></div>
-      </div>
+      <section class="modal-backdrop" *ngIf="showShipBuildModal">
+        <form class="modal" (ngSubmit)="saveShipBuildFromModal()">
+          <div class="section-head">
+            <h3>Create Ship Build</h3>
+            <button type="button" (click)="closeShipBuildModal()">Close</button>
+          </div>
+          <label>
+            Ship Name
+            <input
+              type="text"
+              [(ngModel)]="shipBuildModalName"
+              [ngModelOptions]="{ standalone: true }"
+              placeholder="Exploration Anaconda"
+              autocomplete="off"
+            />
+          </label>
+          <label class="build-label">
+            SLEF / Coriolis Build
+            <textarea
+              rows="12"
+              [(ngModel)]="shipBuildModalValue"
+              [ngModelOptions]="{ standalone: true }"
+              placeholder="Paste SLEF or Coriolis export"
+            ></textarea>
+          </label>
+          <p class="error" *ngIf="shipBuildModalError">{{ shipBuildModalError }}</p>
+          <div class="modal-actions">
+            <button type="submit">Save Ship</button>
+            <button type="button" class="danger" (click)="deleteSelectedShipBuild()" [disabled]="!selectedShipBuildId">
+              Delete Selected
+            </button>
+          </div>
+        </form>
+      </section>
 
-      <p>
-        <strong>Current Star:</strong>
-        {{ snapshot.location.starSystem ?? '------' }}
-        <span class="meta-inline">({{ getRouteMatchLabel(snapshot) }})</span>
-      </p>
-      <p class="next-star-line">
-        <strong>Next Star:</strong>
-        <span>{{ snapshot.route.nextLeg?.systemName ?? '------' }}</span>
-        <button
-          type="button"
-          class="icon-btn"
-          (click)="copyNextStar(snapshot)"
-          [disabled]="!snapshot.route.nextLeg?.systemName"
-          title="Copy next star"
-          aria-label="Copy next star"
-        >
-          &#x29C9;
-        </button>
-      </p>
-      <p><strong>Remaining LY:</strong> {{ formatLy(getRemainingLy(snapshot)) }}</p>
-      <p class="meta" *ngIf="copyMessage">{{ copyMessage }}</p>
-      <p class="error" *ngIf="routeUploadError">{{ routeUploadError }}</p>
-
-      <section class="route-star-info">
-        <h3>Star Info</h3>
+      <section class="star-table">
+        <div class="section-head">
+          <h3>Route Systems</h3>
+          <span class="meta">{{ csvRows.length }} rows</span>
+        </div>
         <div class="table-wrap" *ngIf="csvHeaders.length > 0; else noCsvTable">
           <table>
             <thead>
@@ -231,253 +335,275 @@ const MAX_SAVED_ROUTES = 15;
     </article>
   `,
   styles: `
-    .panel {
-      background: var(--panel-bg);
-      border: 5px solid var(--panel-border);
-      padding: 14px;
+    .route-planner {
+      display: grid;
+      gap: 12px;
+    }
+
+    .planner-header,
+    .summary-tile,
+    .tool-panel,
+    .star-table {
+      border: 1px solid color-mix(in srgb, var(--panel-border) 55%, transparent);
+      background: color-mix(in srgb, var(--panel-bg) 96%, #ffffff 4%);
       box-sizing: border-box;
     }
 
-    .compact h2 {
-      margin: 0 0 10px;
-      font-size: 1.8rem;
-      letter-spacing: 0.4px;
+    .tool-panel.collapsed {
+      align-content: start;
+    }
+
+    .tool-content {
+      display: grid;
+      gap: 12px;
+    }
+
+    .collapse-toggle {
+      min-width: 64px;
+    }
+
+    .planner-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 16px;
+    }
+
+    .eyebrow,
+    .meta,
+    .feedback,
+    .placeholder {
+      margin: 0;
+      opacity: 0.78;
+    }
+
+    .eyebrow {
+      text-transform: uppercase;
+      font-size: 0.78rem;
       font-weight: 700;
     }
 
-    .route-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      margin-bottom: 6px;
-      flex-wrap: wrap;
+    h2,
+    h3 {
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: 0;
     }
 
-    .route-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-left: auto;
-      flex-wrap: wrap;
+    h2 {
+      font-size: 2rem;
+      line-height: 1.05;
     }
 
-    .panel p {
-      margin: 4px 0;
-      font-size: 1.4rem;
-      line-height: 1.25;
-    }
-
-    .meta {
-      font-size: 1.1rem;
-      opacity: 0.9;
-    }
-
-    .progress-line {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .meta-inline {
+    h3 {
       font-size: 1.05rem;
-      opacity: 0.85;
+    }
+
+    .quick-actions,
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .action-row,
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .quick-actions select {
+      min-width: 240px;
+      max-width: 360px;
+    }
+
+    button,
+    select,
+    input,
+    textarea {
+      border: 1px solid color-mix(in srgb, var(--panel-border) 70%, transparent);
+      background: var(--button-bg);
+      color: var(--button-text);
+      font: inherit;
+      box-sizing: border-box;
+    }
+
+    button,
+    select {
+      padding: 8px 11px;
+      font-weight: 700;
     }
 
     button {
-      border: 4px solid var(--panel-border);
-      background: var(--button-bg);
-      color: var(--button-text);
-      padding: 4px 10px;
-      font-size: 1rem;
-      font-weight: 700;
       cursor: pointer;
     }
 
-    select {
-      border: 4px solid var(--panel-border);
-      background: var(--button-bg);
-      color: var(--button-text);
-      padding: 4px 8px;
-      font-size: 0.95rem;
+    button:disabled,
+    select:disabled,
+    input:disabled,
+    textarea:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 1.7fr) repeat(4, minmax(140px, 1fr));
+      gap: 10px;
+    }
+
+    .summary-tile {
+      min-height: 104px;
+      padding: 12px;
+      display: grid;
+      align-content: space-between;
+      gap: 8px;
+    }
+
+    .summary-tile.next {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+    }
+
+    .summary-tile.next .label,
+    .summary-tile.next strong {
+      grid-column: 1;
+    }
+
+    .label {
+      font-size: 0.76rem;
+      text-transform: uppercase;
       font-weight: 700;
-      min-width: 220px;
-      max-width: 340px;
+      opacity: 0.72;
     }
 
-    select:disabled {
-      opacity: 0.65;
-      cursor: default;
+    .summary-tile strong {
+      display: block;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-size: 1.35rem;
+      line-height: 1.12;
     }
 
-    button:disabled {
-      opacity: 0.65;
-      cursor: default;
+    .copy-btn {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      align-self: center;
     }
 
     .meter {
-      position: relative;
-      height: 44px;
-      border: 5px solid var(--panel-border);
+      height: 8px;
       background: var(--meter-bg);
       overflow: hidden;
     }
 
-    .fill {
-      position: absolute;
-      inset: 0 auto 0 0;
+    .meter span {
+      display: block;
+      height: 100%;
       background: var(--meter-fill);
       transition: width 250ms ease;
     }
 
-    .route-meter {
-      height: 30px;
-      margin-bottom: 8px;
-    }
-
-    .route-meter .fill {
-      background: repeating-linear-gradient(
-        90deg,
-        #000 0px,
-        #000 14px,
-        #262626 14px,
-        #262626 28px
-      );
-    }
-
-    .next-star-line {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .icon-btn {
-      border: 3px solid var(--panel-border);
-      background: var(--button-bg);
-      padding: 0 8px;
-      font-size: 1rem;
-      line-height: 1.6;
-      min-width: 34px;
-    }
-
-    .route-star-info {
-      border-top: 4px solid #0a0a0a;
-      margin-top: 10px;
-      padding-top: 10px;
-    }
-
-    .spansh-generator {
-      margin-bottom: 10px;
-      padding: 10px;
-      border: 3px solid var(--panel-border);
-      background: var(--table-bg);
+    .tool-grid {
       display: grid;
-      gap: 10px;
+      grid-template-columns: repeat(2, minmax(320px, 1fr));
+      gap: 12px;
     }
 
-    .generator-grid {
+    .tool-panel,
+    .star-table {
+      padding: 14px;
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
+      gap: 12px;
     }
 
-    .generator-grid label {
-      display: grid;
-      gap: 6px;
-      font-size: 0.95rem;
-      font-weight: 700;
-    }
-
-    .generator-grid input {
-      border: 3px solid var(--panel-border);
-      background: var(--button-bg);
-      color: var(--button-text);
-      padding: 6px 8px;
-      font: inherit;
-    }
-
-    .powered-by {
-      margin: 0;
-      font-size: 0.78rem;
-      opacity: 0.85;
-    }
-
-    .powered-by a {
+    .section-head a {
       color: inherit;
       font-weight: 700;
     }
 
-    .exact-plotter-assist {
-      margin-bottom: 10px;
-      padding: 10px;
-      border: 3px solid var(--panel-border);
-      background: var(--table-bg);
+    .input-grid {
       display: grid;
+      grid-template-columns: repeat(2, minmax(140px, 1fr));
       gap: 10px;
     }
 
-    .exact-plotter-assist h3 {
-      margin: 0;
-      font-size: 1.05rem;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-
-    .helper-copy {
-      margin: 0;
-      font-size: 0.8rem;
-      line-height: 1.25;
-      opacity: 0.8;
-    }
-
+    label,
     .build-label {
       display: grid;
       gap: 6px;
-      font-size: 0.9rem;
+      font-size: 0.82rem;
       font-weight: 700;
+      text-transform: uppercase;
     }
 
-    .build-label textarea {
-      border: 3px solid var(--panel-border);
-      background: var(--button-bg);
-      color: var(--button-text);
-      padding: 8px 10px;
-      font: inherit;
+    input,
+    textarea {
+      width: 100%;
+      padding: 8px 9px;
+    }
+
+    textarea {
       resize: vertical;
+      min-height: 118px;
     }
 
-    .exact-actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(0, 0, 0, 0.58);
     }
 
-    .route-star-info h3 {
-      margin: 0 0 8px;
-      font-size: 1.35rem;
-      letter-spacing: 0.4px;
+    .modal {
+      width: min(760px, 100%);
+      max-height: min(86vh, 760px);
+      overflow: auto;
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid color-mix(in srgb, var(--panel-border) 70%, transparent);
+      background: var(--panel-bg);
+      color: var(--app-text);
+      box-sizing: border-box;
+    }
+
+    .modal textarea {
+      min-height: 280px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.88rem;
+    }
+
+    .danger {
+      color: var(--error-color);
     }
 
     .table-wrap {
-      max-height: 360px;
+      max-height: 420px;
       overflow: auto;
-      border: 3px solid var(--panel-border);
+      border: 1px solid color-mix(in srgb, var(--panel-border) 55%, transparent);
       background: var(--table-bg);
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
     }
 
     th,
     td {
-      border: 1px solid var(--table-border);
-      padding: 6px 8px;
+      border-bottom: 1px solid var(--table-border);
+      padding: 7px 8px;
       text-align: left;
       white-space: nowrap;
     }
@@ -490,36 +616,46 @@ const MAX_SAVED_ROUTES = 15;
     }
 
     tbody tr.row-current td {
-      background: #ffe08a;
+      background: color-mix(in srgb, #f5c84b 72%, var(--table-bg) 28%);
       font-weight: 700;
     }
 
     tbody tr.row-passed td {
-      background: #d8f6d8;
-      color: #2d582d;
-    }
-
-    .placeholder {
-      margin: 0;
-      font-size: 1rem;
-      letter-spacing: 0.2px;
+      opacity: 0.62;
     }
 
     .error {
+      margin: 0;
       color: var(--error-color);
-      font-size: 1.05rem;
+      font-size: 1rem;
       font-weight: 700;
     }
 
-    @media (max-width: 920px) {
-      .generator-grid {
-        grid-template-columns: 1fr 1fr;
+    @media (max-width: 1180px) {
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .summary-tile.next {
+        grid-column: 1 / -1;
       }
     }
 
-    @media (max-width: 640px) {
-      .generator-grid {
+    @media (max-width: 760px) {
+      .planner-header,
+      .tool-grid,
+      .summary-grid,
+      .input-grid {
         grid-template-columns: 1fr;
+      }
+
+      .planner-header {
+        display: grid;
+      }
+
+      .quick-actions,
+      .quick-actions select {
+        width: 100%;
       }
     }
   `,
@@ -535,6 +671,12 @@ export class GalaxyRoutePanelComponent implements OnInit {
   csvRowSystems: string[] = [];
   savedRoutes: SavedRouteEntry[] = [];
   selectedSavedRouteId = '';
+  savedShipBuilds: SavedShipBuild[] = [];
+  selectedShipBuildId = '';
+  showShipBuildModal = false;
+  shipBuildModalName = '';
+  shipBuildModalValue = '';
+  shipBuildModalError: string | null = null;
   spanshSource = '';
   spanshDestination = '';
   spanshJumpRange = 60;
@@ -544,11 +686,14 @@ export class GalaxyRoutePanelComponent implements OnInit {
   exactShipBuild = '';
   exactCargo = 0;
   exactFuelReserveSize = 0;
+  spanshCollapsed = false;
+  exactPlotterCollapsed = false;
 
   private readonly state = inject(RealtimeStateService);
 
   ngOnInit(): void {
     this.loadSavedRoutesFromStorage();
+    this.loadShipBuildsFromStorage();
     this.loadExactPlotterDraft();
   }
 
@@ -622,6 +767,75 @@ export class GalaxyRoutePanelComponent implements OnInit {
     this.persistExactPlotterDraft(snapshot);
     this.copyMessage = 'Exact plotter build saved locally.';
     this.routeUploadError = null;
+  }
+
+  onShipBuildSelected(): void {
+    const selected = this.savedShipBuilds.find((build) => build.id === this.selectedShipBuildId);
+    if (!selected) {
+      return;
+    }
+
+    this.exactShipBuild = selected.build;
+    this.copyMessage = `Loaded ship build: ${selected.name}`;
+    this.routeUploadError = null;
+  }
+
+  openShipBuildModal(): void {
+    const selected = this.savedShipBuilds.find((build) => build.id === this.selectedShipBuildId);
+    this.shipBuildModalName = selected?.name ?? '';
+    this.shipBuildModalValue = selected?.build ?? this.exactShipBuild;
+    this.shipBuildModalError = null;
+    this.showShipBuildModal = true;
+  }
+
+  closeShipBuildModal(): void {
+    this.showShipBuildModal = false;
+    this.shipBuildModalError = null;
+  }
+
+  saveShipBuildFromModal(): void {
+    const name = this.shipBuildModalName.trim();
+    const build = this.shipBuildModalValue.trim();
+
+    if (!name) {
+      this.shipBuildModalError = 'Ship name is required.';
+      return;
+    }
+
+    if (!build) {
+      this.shipBuildModalError = 'SLEF/Coriolis build is required.';
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const existing = this.savedShipBuilds.find((entry) => entry.id === this.selectedShipBuildId);
+    const savedBuild: SavedShipBuild = {
+      id: existing?.id ?? this.createShipBuildId(name),
+      name,
+      build,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+
+    const otherBuilds = this.savedShipBuilds.filter((entry) => entry.id !== savedBuild.id);
+    this.savedShipBuilds = [savedBuild, ...otherBuilds].slice(0, MAX_SAVED_SHIP_BUILDS);
+    this.selectedShipBuildId = savedBuild.id;
+    this.exactShipBuild = savedBuild.build;
+    this.persistShipBuilds();
+    this.copyMessage = `Saved ship build: ${savedBuild.name}`;
+    this.closeShipBuildModal();
+  }
+
+  deleteSelectedShipBuild(): void {
+    if (!this.selectedShipBuildId) {
+      return;
+    }
+
+    this.savedShipBuilds = this.savedShipBuilds.filter((entry) => entry.id !== this.selectedShipBuildId);
+    this.selectedShipBuildId = '';
+    this.persistShipBuilds();
+    this.copyMessage = 'Ship build deleted.';
+    this.closeShipBuildModal();
   }
 
   generateExactRoute(snapshot: StateSnapshot): void {
@@ -1039,6 +1253,7 @@ export class GalaxyRoutePanelComponent implements OnInit {
         source?: string;
         destination?: string;
         shipBuild?: string;
+        shipBuildId?: string;
         cargo?: number;
         fuelReserveSize?: number;
       };
@@ -1046,12 +1261,14 @@ export class GalaxyRoutePanelComponent implements OnInit {
       this.exactSource = typeof parsed.source === 'string' ? parsed.source : '';
       this.exactDestination = typeof parsed.destination === 'string' ? parsed.destination : '';
       this.exactShipBuild = typeof parsed.shipBuild === 'string' ? parsed.shipBuild : '';
+      this.selectedShipBuildId = typeof parsed.shipBuildId === 'string' ? parsed.shipBuildId : '';
       this.exactCargo = typeof parsed.cargo === 'number' ? parsed.cargo : 0;
       this.exactFuelReserveSize = typeof parsed.fuelReserveSize === 'number' ? parsed.fuelReserveSize : 0;
     } catch {
       this.exactSource = '';
       this.exactDestination = '';
       this.exactShipBuild = '';
+      this.selectedShipBuildId = '';
       this.exactCargo = 0;
       this.exactFuelReserveSize = 0;
     }
@@ -1071,6 +1288,7 @@ export class GalaxyRoutePanelComponent implements OnInit {
         source,
         destination,
         shipBuild,
+        shipBuildId: this.selectedShipBuildId,
         cargo: this.exactCargo,
         fuelReserveSize: this.exactFuelReserveSize,
       }));
@@ -1093,6 +1311,56 @@ export class GalaxyRoutePanelComponent implements OnInit {
     textArea.select();
     document.execCommand('copy');
     document.body.removeChild(textArea);
+  }
+
+  private loadShipBuildsFromStorage(): void {
+    try {
+      const raw = localStorage.getItem(SAVED_SHIP_BUILDS_STORAGE_KEY);
+      if (!raw) {
+        this.savedShipBuilds = [];
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) {
+        this.savedShipBuilds = [];
+        return;
+      }
+
+      this.savedShipBuilds = parsed
+        .filter((entry): entry is SavedShipBuild => this.isSavedShipBuild(entry))
+        .slice(0, MAX_SAVED_SHIP_BUILDS);
+    } catch {
+      this.savedShipBuilds = [];
+    }
+  }
+
+  private persistShipBuilds(): void {
+    try {
+      localStorage.setItem(SAVED_SHIP_BUILDS_STORAGE_KEY, JSON.stringify(this.savedShipBuilds));
+    } catch {
+      this.routeUploadError = 'Ship build could not be saved locally.';
+    }
+  }
+
+  private isSavedShipBuild(value: unknown): value is SavedShipBuild {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const candidate = value as Partial<SavedShipBuild>;
+    return (
+      typeof candidate.id === 'string' &&
+      typeof candidate.name === 'string' &&
+      typeof candidate.build === 'string' &&
+      typeof candidate.createdAt === 'string' &&
+      typeof candidate.updatedAt === 'string'
+    );
+  }
+
+  private createShipBuildId(name: string): string {
+    const normalized = name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    return `${normalized || 'ship'}-${Date.now()}`;
   }
 
   private loadSavedRoutesFromStorage(): void {

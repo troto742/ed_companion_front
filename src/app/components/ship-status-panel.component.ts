@@ -2,6 +2,8 @@ import { NgFor, NgIf } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { StateSnapshot } from '../state.types';
 
+type ShipStatusBlock = 'vessel' | 'performance' | 'hull' | 'shields' | 'fuel' | 'status';
+
 @Component({
   selector: 'app-ship-status-panel',
   standalone: true,
@@ -16,87 +18,119 @@ import { StateSnapshot } from '../state.types';
       </div>
 
       <section class="ship-block">
-        <h3>Vessel</h3>
-        <div class="kv-row">
-          <span>Name</span>
+        <button type="button" class="block-toggle" [class.open]="isBlockOpen('vessel')" (click)="toggleBlock('vessel')">
+          <span>Vessel</span>
           <strong>{{ formatText(snapshot.ship.shipName) }}</strong>
-        </div>
-        <div class="kv-row">
-          <span>Identifier</span>
-          <strong>{{ formatText(snapshot.ship.shipIdent) }}</strong>
-        </div>
-        <div class="kv-row">
-          <span>Model</span>
-          <strong>{{ formatShipModel(snapshot.ship.shipType) }}</strong>
-        </div>
-        <div class="kv-row">
-          <span>Ship ID</span>
-          <strong>{{ formatInteger(snapshot.ship.shipId) }}</strong>
+        </button>
+        <div class="block-content" *ngIf="isBlockOpen('vessel')">
+          <div class="kv-row">
+            <span>Name</span>
+            <strong>{{ formatText(snapshot.ship.shipName) }}</strong>
+          </div>
+          <div class="kv-row">
+            <span>Identifier</span>
+            <strong>{{ formatText(snapshot.ship.shipIdent) }}</strong>
+          </div>
+          <div class="kv-row">
+            <span>Model</span>
+            <strong>{{ formatShipModel(snapshot.ship.shipType) }}</strong>
+          </div>
+          <div class="kv-row">
+            <span>Ship ID</span>
+            <strong>{{ formatInteger(snapshot.ship.shipId) }}</strong>
+          </div>
         </div>
       </section>
 
       <section class="ship-block">
-        <h3>Performance</h3>
-        <div class="kv-row">
-          <span>Max Jump Range</span>
+        <button type="button" class="block-toggle" [class.open]="isBlockOpen('performance')" (click)="toggleBlock('performance')">
+          <span>Performance</span>
           <strong>{{ formatLy(snapshot.ship.maxJumpRange) }}</strong>
-        </div>
-        <div class="kv-row">
-          <span>Last Jump</span>
-          <strong>{{ formatLy(snapshot.ship.lastJumpDistance) }}</strong>
-        </div>
-        <div class="kv-row">
-          <span>Cargo</span>
-          <strong>{{ formatCargo(snapshot) }}</strong>
-        </div>
-        <div class="kv-row">
-          <span>Fuel Capacity</span>
-          <strong>{{ formatFuelCapacity(snapshot) }}</strong>
+        </button>
+        <div class="block-content" *ngIf="isBlockOpen('performance')">
+          <div class="kv-row">
+            <span>Max Jump Range</span>
+            <strong>{{ formatLy(snapshot.ship.maxJumpRange) }}</strong>
+          </div>
+          <div class="kv-row">
+            <span>Last Jump</span>
+            <strong>{{ formatLy(snapshot.ship.lastJumpDistance) }}</strong>
+          </div>
+          <div class="kv-row">
+            <span>Cargo</span>
+            <strong>{{ formatCargo(snapshot) }}</strong>
+          </div>
+          <div class="kv-row">
+            <span>Fuel Capacity</span>
+            <strong>{{ formatFuelCapacity(snapshot) }}</strong>
+          </div>
         </div>
       </section>
 
       <section class="ship-block">
-        <div class="ship-line">
+        <button type="button" class="block-toggle" [class.open]="isBlockOpen('hull')" (click)="toggleBlock('hull')">
           <span>Hull Integrity</span>
           <strong>{{ formatPercent(getHullPercent(snapshot)) }}</strong>
-        </div>
-        <div class="meter ship-meter hull-meter">
-          <div class="fill" [style.width.%]="getHullPercent(snapshot)"></div>
+        </button>
+        <div class="block-content" *ngIf="isBlockOpen('hull')">
+          <div class="ship-line">
+            <span>Hull Integrity</span>
+            <strong>{{ formatPercent(getHullPercent(snapshot)) }}</strong>
+          </div>
+          <div class="meter ship-meter hull-meter">
+            <div class="fill" [style.width.%]="getHullPercent(snapshot)"></div>
+          </div>
         </div>
       </section>
 
       <section class="ship-block">
-        <div class="ship-line">
+        <button type="button" class="block-toggle" [class.open]="isBlockOpen('shields')" (click)="toggleBlock('shields')">
           <span>Shields</span>
-          <strong>{{ formatPercent(getShieldsPercent(snapshot)) }}</strong>
+          <strong>{{ getShieldStateLabel(snapshot) }}</strong>
+        </button>
+        <div class="block-content" *ngIf="isBlockOpen('shields')">
+          <div class="ship-line">
+            <span>Shields</span>
+            <strong>{{ formatPercent(getShieldsPercent(snapshot)) }}</strong>
+          </div>
+          <div class="meter ship-meter shield-meter">
+            <div class="fill" [style.width.%]="getShieldsPercent(snapshot)"></div>
+          </div>
+          <p class="shield-state">Status: {{ getShieldStateLabel(snapshot) }}</p>
         </div>
-        <div class="meter ship-meter shield-meter">
-          <div class="fill" [style.width.%]="getShieldsPercent(snapshot)"></div>
-        </div>
-        <p class="shield-state">Status: {{ getShieldStateLabel(snapshot) }}</p>
       </section>
 
       <section class="ship-block">
-        <h3>Fuel</h3>
-        <div class="kv-row">
-          <span>Main Tank</span>
-          <strong>{{ formatTons(snapshot.ship.fuel.main) }}</strong>
-        </div>
-        <div class="kv-row">
-          <span>Reserve</span>
-          <strong>{{ formatTons(snapshot.ship.fuel.reserve) }}</strong>
-        </div>
-        <div class="kv-row total">
-          <span>Total</span>
+        <button type="button" class="block-toggle" [class.open]="isBlockOpen('fuel')" (click)="toggleBlock('fuel')">
+          <span>Fuel</span>
           <strong>{{ formatTons(getFuelTotal(snapshot)) }}</strong>
+        </button>
+        <div class="block-content" *ngIf="isBlockOpen('fuel')">
+          <div class="kv-row">
+            <span>Main Tank</span>
+            <strong>{{ formatTons(snapshot.ship.fuel.main) }}</strong>
+          </div>
+          <div class="kv-row">
+            <span>Reserve</span>
+            <strong>{{ formatTons(snapshot.ship.fuel.reserve) }}</strong>
+          </div>
+          <div class="kv-row total">
+            <span>Total</span>
+            <strong>{{ formatTons(getFuelTotal(snapshot)) }}</strong>
+          </div>
         </div>
       </section>
 
       <section class="ship-block">
-        <h3>Active Status</h3>
-        <div class="status-grid" *ngIf="getActiveFlags(snapshot) as activeFlags">
-          <span class="status-tag" *ngFor="let flag of activeFlags">{{ flag }}</span>
-          <p class="placeholder" *ngIf="activeFlags.length === 0">No active flags</p>
+        <button type="button" class="block-toggle" [class.open]="isBlockOpen('status')" (click)="toggleBlock('status')">
+          <span>Active Status</span>
+          <strong>{{ getActiveFlags(snapshot).length }}</strong>
+        </button>
+        <div class="block-content" *ngIf="isBlockOpen('status')">
+          <div class="status-grid" *ngIf="getActiveFlags(snapshot) as activeFlags">
+            <span class="status-tag" *ngFor="let flag of activeFlags">{{ flag }}</span>
+            <p class="placeholder" *ngIf="activeFlags.length === 0">No active flags</p>
+          </div>
         </div>
       </section>
     </article>
@@ -169,6 +203,43 @@ import { StateSnapshot } from '../state.types';
       text-transform: uppercase;
       letter-spacing: 0.8px;
       opacity: 0.85;
+    }
+
+    .block-toggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      text-align: left;
+      font-size: 1.05rem;
+      text-transform: uppercase;
+    }
+
+    .block-toggle span::before {
+      content: '+';
+      display: inline-block;
+      width: 18px;
+      opacity: 0.72;
+    }
+
+    .block-toggle.open span::before {
+      content: '-';
+    }
+
+    .block-toggle strong {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      text-align: right;
+      font-size: 0.98rem;
+    }
+
+    .block-content {
+      margin-top: 8px;
     }
 
     .ship-line {
@@ -256,8 +327,23 @@ export class ShipStatusPanelComponent {
   @Input() isDarkMode = false;
   @Output() themeToggle = new EventEmitter<void>();
 
+  private readonly openBlocks = new Set<ShipStatusBlock>(['vessel', 'performance', 'hull', 'shields']);
+
   onThemeToggle(): void {
     this.themeToggle.emit();
+  }
+
+  toggleBlock(block: ShipStatusBlock): void {
+    if (this.openBlocks.has(block)) {
+      this.openBlocks.delete(block);
+      return;
+    }
+
+    this.openBlocks.add(block);
+  }
+
+  isBlockOpen(block: ShipStatusBlock): boolean {
+    return this.openBlocks.has(block);
   }
 
   getActiveFlags(snapshot: StateSnapshot): string[] {
