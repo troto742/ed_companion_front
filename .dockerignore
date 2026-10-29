@@ -2,3 +2,7 @@ node_modules
 dist
 .angular
 npm-debug.log
+
+.env
+.env.*
+!.env.example

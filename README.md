@@ -156,3 +156,5 @@ El [Jenkinsfile](Jenkinsfile) incluye build de imagen, publicación en Docker Hu
 El código reúne integración REST y Socket.IO, manejo de estado con Signals, formularios, componentes standalone y empaquetado para despliegue. Permite seguir un flujo completo desde un evento de telemetría hasta su representación en pantalla.
 
 Los siguientes pasos serían añadir pruebas del servicio y del flujo de acceso, extraer responsabilidades de los paneles más grandes y ofrecer un modo de demostración con datos precargados. Para presentar el proyecto en un portfolio, una captura del dashboard y una demo con datos ficticios facilitarían entender su resultado visual.
+
+Si arrancas el backend desde su plantilla `.env.example`, sustituye los placeholders y utiliza esa misma API key en el formulario y en las peticiones de prueba. El valor `dev-api-key` de esta guía es únicamente para la configuración de demostración descrita arriba.

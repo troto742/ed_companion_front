@@ -41,3 +41,8 @@ __screenshots__/
 # System files
 .DS_Store
 Thumbs.db
+
+# Configuracion local y secretos; solo se versionan plantillas.
+.env
+.env.*
+!.env.example
